@@ -5,7 +5,7 @@ from collections import deque
 
 # ---------- USER-CONFIGURABLE CONSTANTS ----------
 
-SVG_PATH = r""
+SVG_PATH = "/home/gula/Telautograph/XY_Plotter/photo-camera-svgrepo-com.svg"
 
 # Screen & Drawing Area
 FPS = 60
@@ -42,6 +42,10 @@ rect_left, rect_right = -RECT_W_CM / 2, RECT_W_CM / 2
 rect_top, rect_bottom = -RECT_H_CM / 2, RECT_H_CM / 2
 baseA = (BASE_A_X, BASE_A_Y)
 baseB = (BASE_B_X, BASE_B_Y)
+
+# added this
+Default_angle_A = 113.5
+Default_angle_B = -223.1
 
 # ---------- Pygame Setup ----------
 pygame.init()
@@ -85,22 +89,29 @@ def choose_solution(solns, base, l1, l2):
     return (s1, e1, j1) if j1[1] > j2[1] else (s2, e2, j2)
 
 def load_svg_points(filename):
-    print("load_svg_points() called! ", filename)
-    paths, _ = svg2paths(filename)
+    print("load_svg_points() called! ", filename, " type = ", type(filename))
+
+    paths, attributes = svg2paths(filename)
+    print("paths = ", paths, " type = ", type(paths))
+    print("attributes = ", attributes, " type = ", type(attributes))
     points = []
     for p in paths:
+        print("Outer for loop!  for p in paths: ", p)
         for t in np.linspace(0, 1, SAMPLES_PER_CURVE):
+            print("inner for loop!!!! for t in np.linspace(0, 1, SAMPLES_PER_CURVE):", t)
             z = p.point(t)
             points.append((z.real, z.imag))
-        points.append(None)
+        print("Points = ", points)
+        # points.append(None)
     xs = [x for x, y in points if x is not None]
     ys = [y for x, y in points if y is not None]
     w, h = max(xs) - min(xs), max(ys) - min(ys)
     s = min(RECT_W_CM / w, RECT_H_CM / h) * 0.9
     return [None if pt is None else
             ((pt[0] - (min(xs) + w / 2)) * s,
-             (pt[1] - (min(ys) + h / 2)) * s)
+            (pt[1] - (min(ys) + h / 2)) * s)
             for pt in points]
+
 
 try:
     print("Try")
@@ -136,6 +147,12 @@ minB, maxB = compute_angle_range(baseB, L3, L4)
 
 def map_angle_to_255(angle, min_a, max_a):
     return int((angle - min_a) / (max_a - min_a) * 255)
+
+# def Base_A_force(angle, min_a, max_a):
+#     return int((angle - min_a) / (max_a - min_a) * 255)
+
+# def Base_B_force(angle, min_a, max_a):
+#     return int((angle - min_a) / (max_a - min_a) * 255)
 
 # def gradient_color(value):
 #     if value < 128:
@@ -204,6 +221,11 @@ while running:
     baseA_val = map_angle_to_255(sL, minA, maxA)
     baseB_val = map_angle_to_255(sR, minB, maxB)
 
+
+    # Added this
+    ForceA = Default_angle_A - math.degrees(sL)
+    ForceB = Default_angle_B - math.degrees(sR)
+
     screen.fill((25, 25, 35))
     rect_screen = pygame.Rect(CENTER_X + cm_to_px(rect_left), CENTER_Y + cm_to_px(rect_top),
                               cm_to_px(RECT_W_CM), cm_to_px(RECT_H_CM))
@@ -237,13 +259,15 @@ while running:
     info_x=SCREEN_W-260; info_y=10
     info=[
         f"L1,L2,L3,L4: {L1},{L2},{L3},{L4}",
-        f"BaseA: {baseA[0]:.2f},{baseA[1]:.2f}",
         f"J1: {jL[0]:.2f},{jL[1]:.2f}",
-        f"BaseB: {baseB[0]:.2f},{baseB[1]:.2f}",
         f"J2: {jR[0]:.2f},{jR[1]:.2f}",
         f"Pen: {pen[0]:.2f},{pen[1]:.2f}",
+        f"BaseA: {baseA[0]:.2f},{baseA[1]:.2f}",
+        f"BaseB: {baseB[0]:.2f},{baseB[1]:.2f}",
         f"Base A angle: {math.degrees(sL):.1f}°",
         f"Base B angle: {math.degrees(sR):.1f}°",
+        f"forceA = {ForceA}",
+        f"forceB = {ForceB}",
         "Pen: " + ("DOWN" if pen_down else "UP")
     ]
     for i,line in enumerate(info):
