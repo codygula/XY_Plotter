@@ -15,6 +15,9 @@ from svgpathtools import svg2paths
 from collections import deque
 import numpy as np
 
+# For controlling Arduino Due 12 bit DACs.
+import serial
+
 # ---------------- USER-CONFIGURABLE CONSTANTS ----------------
 FPS = 60
 SCREEN_W, SCREEN_H = 1000, 750
@@ -282,6 +285,11 @@ def reset():
     log("Replay initiated.")
 reset()
 
+
+def operate_DAC(Aval, Bval, penlift=False):
+    print(Aval, Bval, penlift)
+    serial.send(Aval, Bval, penlift)
+
 # ---------------- Main Loop ----------------
 running = True
 while running:
@@ -447,6 +455,10 @@ while running:
     screen.blit(font.render(f"Pen Status: {'DOWN' if pen_down else 'UP'}", True, ((0,255,0) if pen_down else (255,160,160))), (20, 85))
     screen.blit(font.render(f"Current Status: ", True, (255,255,140)), (20, 100))
     screen.blit(font.render(f"Speed: ", True, (255,255,140)), (20, 115))
+
+    # DAC control function
+    operate_DAC(baseA_val, baseB_val, pen_down)
+
     # Debug log (right side)
     dbg_x = SCREEN_W - 360; dbg_y = 220
     screen.blit(font.render("Debug Log:", True, (255,255,140)), (dbg_x, dbg_y))
