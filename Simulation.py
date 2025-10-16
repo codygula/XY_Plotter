@@ -42,6 +42,11 @@ if ENABLE_SERIAL:
 # END SERIAL CODE
 # END SERIAL CODE
 
+
+SVG_FILE = "/home/gula/Telautograph/XY_Plotter/line-3-svgrepo-com.svg"        # file to load (if missing, fallback shape used)
+
+
+
 # ---------------- USER-CONFIGURABLE CONSTANTS ----------------
 FPS = 60
 SCREEN_W, SCREEN_H = 1000, 750
@@ -50,24 +55,11 @@ PX_PER_CM = 50
 # Valid drawing area
 RECT_W_CM, RECT_H_CM = 5.0, 2.0
 
-
-# # Bar lengths (cm)
-# L1 = 6.0
-# L2 = 6.0
-# L3 = 6.0
-# L4 = 6.0
-
 # Bar Lengths (in cm) – tweak here
 L1 = 3.75  # Base A segment 1
 L2 = 4.75  # Base A segment 2
 L3 = 3.75  # Base B segment 1
 L4 = 4.75  # Base B segment 2
-
-# # Base positions (cm)
-# BASE_A_X = -RECT_W_CM / 2 - 0.5
-# BASE_A_Y = -RECT_H_CM / 2 - 1.0
-# BASE_B_X = RECT_W_CM / 2 + 0.5
-# BASE_B_Y = -RECT_H_CM / 2 - 1.0
 
 BASE_A_X = -RECT_W_CM +0.75 # Base A X
 BASE_A_Y = -RECT_H_CM +3 #/ 2 + 0  # Base A Y
@@ -75,12 +67,18 @@ BASE_A_Y = -RECT_H_CM +3 #/ 2 + 0  # Base A Y
 BASE_B_X = RECT_W_CM -0.75  
 BASE_B_Y = -RECT_H_CM +3
 
+# min and max angles. Mostly just estimates. Used what what ChatGPT code said was the starting angles (113, -223) and added 90 degrees.
+# Used with map_to_255() to calculate ForceA and ForceB to operate DACs.
+minA = 113
+maxA = 23
+
+minB = -223
+maxB = -313
 
 # Motion & sampling parameters
 STEP_SIZE_CM = 0.05             # pen step per frame in cm
 SAMPLES_PER_UNIT = 0.12         # sampling density: samples per SVG unit length (increase for higher fidelity)
 MIN_SAMPLES_PER_SEGMENT = 4     # minimum samples per segment
-SVG_FILE = "/home/gula/Telautograph/XY_Plotter/line-3-svgrepo-com.svg"        # file to load (if missing, fallback shape used)
 
 # Debug / UI
 DEBUG_LINES = 18
@@ -100,9 +98,6 @@ pygame.display.set_caption("5-Bar Linkage")
 clock = pygame.time.Clock()
 font = pygame.font.SysFont("consolas", 16)
 
-# added this
-Default_angle_A = 113.5
-Default_angle_B = -223.1
 
 # ---------------- Debug log ----------------
 debug_log = deque(maxlen=DEBUG_LINES)
@@ -299,6 +294,32 @@ def gradient_color(v):
         b = 0
     return (r, g, b)
 
+def map_to_255(value, min_val, max_val):
+    """
+    Maps a number within [min_val, max_val] to a value in [0, 255].
+
+    Parameters:
+        value (float): The input number (guaranteed min_val <= value <= max_val).
+        min_val (float): The lower bound of the input range.
+        max_val (float): The upper bound of the input range.
+
+    Returns:
+        int: A value between 0 and 255.
+    """
+    # 0-255 code
+    # if max_val == min_val:
+    #     return 0  # avoid division by zero
+    # normalized = (value - min_val) / (max_val - min_val)
+    # scaled = int(round(normalized * 255))
+    # return max(0, min(255, scaled))  # clamp to [0,255]
+
+    #255-0 code
+    if max_val == min_val:
+        return 255  # avoid division by zero
+    normalized = (value - min_val) / (max_val - min_val)
+    scaled = int(round((1 - normalized) * 255))
+    return max(0, min(255, scaled))  # clamp to [0,255]
+
 # ---------------- State ----------------
 def reset():
     global pen, trace, path_idx, pen_down
@@ -314,13 +335,12 @@ def operate_DAC(Aval, Bval, penlift=False):
     print(Aval, Bval, penlift)
     if ser and ser.is_open:
         try:
-            baseA = max(0, min(255, int(baseA_val)))
-            baseB = max(0, min(255, int(baseB_val)))
-            pd = 1 if pen_down else 0
+            baseA = max(0, min(255, int(Aval)))
+            baseB = max(0, min(255, int(Bval)))
+            pd = 1 if penlift else 0
             ser.write(bytes([baseA, baseB, pd]))
         except Exception as e:
-            log(f"Serial send error: {e}")
-
+            print(f"Serial send error: {e}")
 
 # ---------------- Main Loop ----------------
 running = True
@@ -399,8 +419,11 @@ while running:
     baseB_val = map_angle_to_255(sR, minB, maxB) if ikR else 0
 
     # Added this
-    ForceA = Default_angle_A - math.degrees(sL)
-    ForceB = Default_angle_B - math.degrees(sR)
+    # ForceA = Default_angle_A - math.degrees(sL)
+    # ForceB = Default_angle_B - math.degrees(sR)
+
+    ForceA = map_to_255(math.degrees(sL), minA, maxA)
+    ForceB = map_to_255(math.degrees(sR), minB, maxB)
 
     # ---------------- Drawing ----------------
     screen.fill((22,22,28))
@@ -489,13 +512,28 @@ while running:
     screen.blit(font.render(f"Speed: ", True, (255,255,140)), (20, 115))
 
     # DAC control function
-    operate_DAC(baseA_val, baseB_val, pen_down)
+    # operate_DAC(baseA_val, baseB_val, pen_down)
+    operate_DAC(ForceA, ForceB, pen_down)
 
     # Debug log (right side)
     dbg_x = SCREEN_W - 360; dbg_y = 220
     screen.blit(font.render("Debug Log:", True, (255,255,140)), (dbg_x, dbg_y))
     for i, msg in enumerate(debug_log):
         screen.blit(font.render(msg, True, (200,200,200)), (dbg_x, dbg_y + 18 * (i + 1)))
+
+
+        # ---------- CONNECTION INDICATOR ----------
+    # now = time.time()
+    # if not ser or not ser.is_open:
+    #     color = (200, 50, 50)       # red = disconnected
+    # elif now - last_send_time < 1.0:
+    #     color = (50, 220, 50)       # green = actively sending
+    # else:
+    #     color = (220, 200, 50)      # yellow = idle but connected
+    # pygame.draw.circle(screen, color, (SCREEN_W - 30, 30), 10)
+    # pygame.draw.circle(screen, (0, 0, 0), (SCREEN_W - 30, 30), 10, 2)
+
+
 
     pygame.display.flip()
     clock.tick(FPS)
