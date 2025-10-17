@@ -73,7 +73,8 @@ minA = 113
 maxA = 23
 
 minB = -223
-maxB = -313
+# maxB = -313
+maxB = -300
 
 # Motion & sampling parameters
 STEP_SIZE_CM = 0.05             # pen step per frame in cm
@@ -271,8 +272,6 @@ def compute_angle_range(base, l_prox, l_dist, step=0.25):
         return (-math.pi, math.pi)
     return min(angles), max(angles)
 
-minA, maxA = compute_angle_range(baseA, L1, L2)
-minB, maxB = compute_angle_range(baseB, L3, L4)
 
 def map_angle_to_255(angle, min_a, max_a):
     # clamp and map
