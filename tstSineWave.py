@@ -6,7 +6,7 @@ import sys
 # ========= CONFIGURATION =========
 PORT = "/dev/ttyACM0"   # Change to your Arduino port (e.g., 'COM3' on Windows)
 BAUDRATE = 115200
-FREQ_HZ = 1.0           # Frequency of sine wave (Hz)
+FREQ_HZ = 0.5           # Frequency of sine wave (Hz)
 AMPLITUDE = 127.5       # 127.5 gives full swing between 0–255
 OFFSET = 127.5
 UPDATE_RATE = 100       # samples per second (sine wave resolution)

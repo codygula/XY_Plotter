@@ -25,7 +25,7 @@ import serial
 # SERIAL_PORT = 'Linux/thing/here'  
 SERIAL_PORT = '/dev/ttyACM0'
 BAUD_RATE = 115200
-ENABLE_SERIAL = True 
+ENABLE_SERIAL = True
 
 # SERIAL SETUP 
 ser = None
@@ -43,12 +43,21 @@ if ENABLE_SERIAL:
 # END SERIAL CODE
 
 
-SVG_FILE = "/home/gula/Telautograph/XY_Plotter/line-3-svgrepo-com.svg"        # file to load (if missing, fallback shape used)
+SVG_FILE = "/home/gula/Telautograph/XY_Plotter/rectangle.svg"    # file to load (if missing, fallback shape used)
+
+# runs in continuous loop when set to 1. For now, it only turns on one line of code in "While running: loop"
+CALIBRATION_MODE = 1
+DataFile = open("DACData.txt", "w") 
+# DataFile.write(f"TESTING! \n")
 
 
+
+# SVG_FILE = "/home/gula/Telautograph/XY_Plotter/output.svg"
 
 # ---------------- USER-CONFIGURABLE CONSTANTS ----------------
 FPS = 60
+
+# This is the size of the entire Python program screen.
 SCREEN_W, SCREEN_H = 1000, 750
 PX_PER_CM = 50
 
@@ -178,10 +187,15 @@ def load_and_normalize_svg(filename):
     """Load SVG, adaptively sample segments, and normalize to drawing rectangle in cm.
        Returns a flat list of points with None separators between subpaths.
     """
+    print("load_and_normalize_svg() called")
     try:
+        print("load_and_normalize_svg() try")
         paths, _ = svg2paths(filename)
+        print("load_and_normalize_svg() try complete")
+        print("paths = ", paths)
+        print("_ = ", _)
     except Exception as e:
-        log(f"SVG load failed: {e}")
+        log(f"load_and_normalize_svg() SVG load failed: {e}")
         return []
 
     all_points_svg = []   # in SVG units (as returned by svgpathtools)
@@ -248,6 +262,7 @@ def fallback_shape():
 
 # ---------------- Load path ----------------
 path = load_and_normalize_svg(SVG_FILE)
+print(path)
 if not path:
     log("Using fallback shape.")
     path = fallback_shape()
@@ -331,13 +346,14 @@ reset()
 
 
 def operate_DAC(Aval, Bval, penlift=False):
-    print(Aval, Bval, penlift)
+    # print(Aval, Bval, penlift)
     if ser and ser.is_open:
         try:
             baseA = max(0, min(255, int(Aval)))
             baseB = max(0, min(255, int(Bval)))
             pd = 1 if penlift else 0
             ser.write(bytes([baseA, baseB, pd]))
+            DataFile.write(f"{baseA}, {baseB}\n")
         except Exception as e:
             print(f"Serial send error: {e}")
 
@@ -399,6 +415,8 @@ while running:
                 pen_down = False
                 log("Pen lifted (returning home).")
             pen = (pen[0] + dx / dist * STEP_SIZE_CM, pen[1] + dy / dist * STEP_SIZE_CM)
+            if CALIBRATION_MODE == 1: 
+                reset()
         else:
             pen_down = False
 
