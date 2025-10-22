@@ -13,7 +13,7 @@ import keyboard
 import serial
 
 # SERIAL_PORT = 'Linux/thing/here'  
-SERIAL_PORT = '/dev/ttyACM0'
+SERIAL_PORT = '/dev/ttyACM1'
 BAUD_RATE = 115200
 ENABLE_SERIAL = True 
 

@@ -14,7 +14,7 @@ import pygame, math, time
 from svgpathtools import svg2paths
 from collections import deque
 import numpy as np
-
+import struct
 
 # SERIAL CODE
 # SERIAL CODE
@@ -23,7 +23,8 @@ import numpy as np
 import serial
 
 # SERIAL_PORT = 'Linux/thing/here'  
-SERIAL_PORT = '/dev/ttyACM0'
+SERIAL_PORT = '/dev/ttyACM1'
+SERIAL_PORT = '/dev/ttyACM1'
 BAUD_RATE = 115200
 ENABLE_SERIAL = True
 
@@ -296,17 +297,13 @@ def map_angle_to_255(angle, min_a, max_a):
     v = max(0.0, min(1.0, v))
     return int(round(v * 255))
 
-def gradient_color(v):
-    # v: 0..255 -> blue->green->red
-    if v < 128:
-        r = 0
-        g = int(2 * v)
-        b = 255 - g
-    else:
-        r = int(2 * (v - 128))
-        g = 255 - r
-        b = 0
-    return (r, g, b)
+def map_angle_to_4095(angle, min_a, max_a):
+    # clamp and map
+    if max_a == min_a:
+        return 2048
+    v = (angle - min_a) / (max_a - min_a)
+    v = max(0.0, min(1.0, v))
+    return int(round(v * 4095))
 
 def map_to_255(value, min_val, max_val):
     """
@@ -320,6 +317,8 @@ def map_to_255(value, min_val, max_val):
     Returns:
         int: A value between 0 and 255.
     """
+
+    # 8 bit code
     # 0-255 code
     # if max_val == min_val:
     #     return 0  # avoid division by zero
@@ -327,12 +326,22 @@ def map_to_255(value, min_val, max_val):
     # scaled = int(round(normalized * 255))
     # return max(0, min(255, scaled))  # clamp to [0,255]
 
-    #255-0 code
+    # #255-0 code
+    # if max_val == min_val:
+    #     return 255  # avoid division by zero
+    # normalized = (value - min_val) / (max_val - min_val)
+    # scaled = int(round((1 - normalized) * 255))
+    # return max(0, min(255, scaled))  # clamp to [0,255]
+
+    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+    #12 bit code
+    #4095-0 code
     if max_val == min_val:
-        return 255  # avoid division by zero
+        return 4095  # avoid division by zero
     normalized = (value - min_val) / (max_val - min_val)
-    scaled = int(round((1 - normalized) * 255))
-    return max(0, min(255, scaled))  # clamp to [0,255]
+    scaled = int(round((1 - normalized) * 4095))
+    return max(0, min(4095, scaled))  # clamp to [0,255]
 
 # ---------------- State ----------------
 def reset():
@@ -345,17 +354,52 @@ def reset():
 reset()
 
 
-def operate_DAC(Aval, Bval, penlift=False):
-    # print(Aval, Bval, penlift)
-    if ser and ser.is_open:
-        try:
-            baseA = max(0, min(255, int(Aval)))
-            baseB = max(0, min(255, int(Bval)))
-            pd = 1 if penlift else 0
-            ser.write(bytes([baseA, baseB, pd]))
-            DataFile.write(f"{baseA}, {baseB}\n")
-        except Exception as e:
-            print(f"Serial send error: {e}")
+# def operate_DAC(Aval, Bval, penlift=False):
+#     print(Aval, Bval, penlift)
+#     if ser and ser.is_open:
+#         try:
+#             # baseA = max(0, min(255, int(Aval)))
+#             # baseB = max(0, min(255, int(Bval)))
+#             baseA = max(0, min(4095, int(Aval)))
+#             baseB = max(0, min(4095, int(Bval)))
+#             pd = 1 if penlift else 0
+#             ser.write(bytes([baseA, baseB, pd]))
+#             DataFile.write(f"{baseA}, {baseB}\n")
+#         except Exception as e:
+#             print(f"Serial send error: {e}")
+
+def operate_DAC(baseA_val, baseB_val, pen_down): 
+    """
+    Send 12-bit DAC values and pen state over serial to the Arduino Due.
+
+    Args:
+        baseA_val (int): Value for DAC1 (0–4095)
+        baseB_val (int): Value for DAC2 (0–4095)
+        pen_down (bool or int): 1 if pen is down, 0 if up
+        ser (serial.Serial): Open serial connection to Arduino
+    """
+    # Clamp to valid 12-bit range
+    baseA_val = max(0, min(4095, int(baseA_val)))
+    baseB_val = max(0, min(4095, int(baseB_val)))
+    pen_state = 1 if pen_down else 0
+
+    # === Option 1: ASCII protocol (readable, easy to debug) ===
+    # Format: "baseA,baseB,pen\n"
+    msg = f"{baseA_val},{baseB_val},{pen_state}\n"
+    ser.write(msg.encode('ascii'))
+
+    # === Option 2 (optional): binary protocol (faster, compact) ===
+    # If you want binary 12-bit transmission instead:
+    # packet = struct.pack('<HHB', baseA_val, baseB_val, pen_state)
+    # ser.write(packet)
+
+    # === Debug output ===
+    print(f"Sent to Arduino → A:{baseA_val:4d}  B:{baseB_val:4d}  Pen:{pen_state}")
+
+
+
+
+
 
 # ---------------- Main Loop ----------------
 running = True
@@ -432,8 +476,11 @@ while running:
         sR,eR,jR = choose_solution(ikR, baseB, L3, L4)
 
     # ---------------- Servo mapping ----------------
-    baseA_val = map_angle_to_255(sL, minA, maxA) if ikL else 0
-    baseB_val = map_angle_to_255(sR, minB, maxB) if ikR else 0
+    # baseA_val = map_angle_to_255(sL, minA, maxA) if ikL else 0
+    # baseB_val = map_angle_to_255(sR, minB, maxB) if ikR else 0
+
+    baseA_val = map_angle_to_4095(sL, minA, maxA) if ikL else 0
+    baseB_val = map_angle_to_4095(sR, minB, maxB) if ikR else 0
 
     # Added this
     # ForceA = Default_angle_A - math.degrees(sL)
@@ -516,7 +563,7 @@ while running:
 
     # Servo Bars (visualize mapped 0-255)
     def draw_bar(x, y, value, label):
-        color = gradient_color(value)
+        color = "red"
         pygame.draw.rect(screen, (50,50,50), (x, y, BAR_WIDTH_PX, 18))
         pygame.draw.rect(screen, color, (x, y, int(value/255.0*BAR_WIDTH_PX), 18))
         pygame.draw.rect(screen, (255,255,255), (x, y, BAR_WIDTH_PX, 18), 1)
