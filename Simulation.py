@@ -272,6 +272,31 @@ if not path:
 replay_btn = pygame.Rect(20, SCREEN_H - 60, 100, 35)
 clear_btn  = pygame.Rect(140, SCREEN_H - 60, 100, 35)
 
+###################################################################################################### NEW BUTTONS
+
+minAUpBtn = pygame.Rect(20, SCREEN_H - 240, 75, 30)
+minADownBtn = pygame.Rect(20, SCREEN_H - 200, 75, 30)
+
+maxAUpBtn = pygame.Rect(20, SCREEN_H - 160, 75, 30)
+maxADownBtn = pygame.Rect(20, SCREEN_H - 120, 75, 30)
+
+minBUpBtn = pygame.Rect(100, SCREEN_H - 240, 75, 30)
+minBDownBtn = pygame.Rect(100, SCREEN_H - 200, 75, 30)
+
+maxBUpBtn = pygame.Rect(100, SCREEN_H - 160, 75, 30)
+maxBDownBtn = pygame.Rect(100, SCREEN_H - 120, 75, 30)
+
+offsetUpAbtn = pygame.Rect(20, SCREEN_H - 350, 75, 35)
+offsetDownAbtn = pygame.Rect(20, SCREEN_H - 310, 75, 35)
+
+offsetUpBbtn = pygame.Rect(100, SCREEN_H - 350, 75, 35)
+offsetDownBbtn = pygame.Rect(100, SCREEN_H - 310, 75, 35)
+
+Multiplier1Btn = pygame.Rect(100, SCREEN_H - 450, 75, 35)
+Multiplier10Btn = pygame.Rect(100, SCREEN_H - 410, 75, 35)
+
+###################################################################################################### END NEW BUTTONS
+
 # ---------------- Angle mapping helpers (to 0-255) & gradient ----------------
 def compute_angle_range(base, l_prox, l_dist, step=0.25):
     angles = []
@@ -365,8 +390,8 @@ reset()
 #             pd = 1 if penlift else 0
 #             ser.write(bytes([baseA, baseB, pd]))
 #             DataFile.write(f"{baseA}, {baseB}\n")
-#         except Exception as e:
-#             print(f"Serial send error: {e}")
+        # except Exception as e:
+        #     print(f"Serial send error: {e}")
 
 def operate_DAC(baseA_val, baseB_val, pen_down): 
     """
@@ -378,30 +403,34 @@ def operate_DAC(baseA_val, baseB_val, pen_down):
         pen_down (bool or int): 1 if pen is down, 0 if up
         ser (serial.Serial): Open serial connection to Arduino
     """
-    # Clamp to valid 12-bit range
-    baseA_val = max(0, min(4095, int(baseA_val)))
-    baseB_val = max(0, min(4095, int(baseB_val)))
-    pen_state = 1 if pen_down else 0
+    if ser and ser.is_open:
+        try:
+            # Clamp to valid 12-bit range
+            baseA_val = max(0, min(4095, int(baseA_val)))
+            baseB_val = max(0, min(4095, int(baseB_val)))
+            pen_state = 1 if pen_down else 0
 
-    # === Option 1: ASCII protocol (readable, easy to debug) ===
-    # Format: "baseA,baseB,pen\n"
-    msg = f"{baseA_val},{baseB_val},{pen_state}\n"
-    ser.write(msg.encode('ascii'))
+            # === Option 1: ASCII protocol (readable, easy to debug) ===
+            # Format: "baseA,baseB,pen\n"
+            msg = f"{baseA_val},{baseB_val},{pen_state}\n"
+            ser.write(msg.encode('ascii'))
 
-    # === Option 2 (optional): binary protocol (faster, compact) ===
-    # If you want binary 12-bit transmission instead:
-    # packet = struct.pack('<HHB', baseA_val, baseB_val, pen_state)
-    # ser.write(packet)
+            # === Option 2 (optional): binary protocol (faster, compact) ===
+            # If you want binary 12-bit transmission instead:
+            # packet = struct.pack('<HHB', baseA_val, baseB_val, pen_state)
+            # ser.write(packet)
 
-    # === Debug output ===
-    print(f"Sent to Arduino → A:{baseA_val:4d}  B:{baseB_val:4d}  Pen:{pen_state}")
-
+            # === Debug output ===
+            print(f"Sent to Arduino → A:{baseA_val:4d}  B:{baseB_val:4d}  Pen:{pen_state}")
+        except Exception as e:
+            print(f"Serial send error: {e}")
 
 
 
 
 
 # ---------------- Main Loop ----------------
+Multiplier =10
 running = True
 while running:
     for ev in pygame.event.get():
@@ -415,6 +444,45 @@ while running:
             elif clear_btn.collidepoint(ev.pos):
                 trace.clear()
                 log("Trace cleared.")
+            
+            elif minAUpBtn.collidepoint(ev.pos):
+                minA += Multiplier
+            elif minADownBtn.collidepoint(ev.pos):
+                minA -= Multiplier
+ 
+            elif maxAUpBtn.collidepoint(ev.pos):
+                maxA += Multiplier
+            elif maxADownBtn.collidepoint(ev.pos):
+                maxA -= Multiplier
+ 
+            elif minBUpBtn.collidepoint(ev.pos):
+                minB += Multiplier
+            elif minBDownBtn.collidepoint(ev.pos):
+                minB -= Multiplier
+ 
+            elif maxBUpBtn.collidepoint(ev.pos):
+                maxB += Multiplier
+            elif maxBDownBtn.collidepoint(ev.pos):
+                maxB -= Multiplier
+
+            elif offsetUpAbtn.collidepoint(ev.pos):
+                minA += Multiplier
+                maxA += Multiplier
+            elif offsetDownAbtn.collidepoint(ev.pos):
+                minA -= Multiplier
+                maxA -= Multiplier
+ 
+            elif offsetUpBbtn.collidepoint(ev.pos):
+                minB += Multiplier
+                maxB += Multiplier
+            elif offsetDownBbtn.collidepoint(ev.pos):
+                minB -= Multiplier
+                maxB -= Multiplier
+
+            elif Multiplier10Btn.collidepoint(ev.pos):
+                Multiplier = 10
+            elif Multiplier1Btn.collidepoint(ev.pos):
+                Multiplier = 1
 
     # ---------------- Pen motion (pen-up between subpaths) ----------------
     if path_idx < len(path):
@@ -541,6 +609,11 @@ while running:
             f"J1: {jL[0]:.2f},{jL[1]:.2f} cm",
             f"J2: {jR[0]:.2f},{jR[1]:.2f} cm",
             f"Pen: {pen[0]:.2f},{pen[1]:.2f} cm",
+            f"Multiplier = {Multiplier}",
+            f"minA = {minA}",
+            f"maxA = {maxA}",
+            f"minB = {minB}",
+            f"maxB = {maxB}",
             f"Base A angle: {math.degrees(sL):.1f}°",
             f"Base B angle: {math.degrees(sR):.1f}°",
             f"forceA = {ForceA}",
@@ -558,19 +631,59 @@ while running:
     # Buttons
     pygame.draw.rect(screen, (80,150,255), replay_btn)
     pygame.draw.rect(screen, (255,120,80), clear_btn)
+###################################################################################################### NEW BUTTONS
+    pygame.draw.rect(screen, (255,120,80), minAUpBtn)
+    pygame.draw.rect(screen, (255,120,80), minADownBtn)
+    pygame.draw.rect(screen, (255,120,80), maxAUpBtn)
+    pygame.draw.rect(screen, (255,120,80), maxADownBtn)
+
+    pygame.draw.rect(screen, (255,120,80), minBUpBtn)
+    pygame.draw.rect(screen, (255,120,80), minBDownBtn)
+    pygame.draw.rect(screen, (255,120,80), maxBUpBtn)
+    pygame.draw.rect(screen, (255,120,80), maxBDownBtn)
+
+    pygame.draw.rect(screen, (255,120,80), offsetUpAbtn)
+    pygame.draw.rect(screen, (255,120,80), offsetDownAbtn)
+    pygame.draw.rect(screen, (255,120,80), offsetUpBbtn)
+    pygame.draw.rect(screen, (255,120,80), offsetDownBbtn)
+
+    pygame.draw.rect(screen, (255,120,80), Multiplier10Btn)
+    pygame.draw.rect(screen, (255,120,80), Multiplier1Btn)
+###################################################################################################### END NEW BUTTONS    
+
+
     screen.blit(font.render("Replay", True, (255,255,255)), (replay_btn.x+20, replay_btn.y+8))
     screen.blit(font.render("Clear", True, (255,255,255)), (clear_btn.x+30, clear_btn.y+8))
+###################################################################################################### NEW BUTTONS
+    screen.blit(font.render("MinA+", True, (255,255,255)), (minAUpBtn.x+8, minAUpBtn.y+8))
+    screen.blit(font.render("MinA-", True, (255,255,255)), (minADownBtn.x+8, minADownBtn.y+8))
+    screen.blit(font.render("MaxA+", True, (255,255,255)), (maxAUpBtn.x+8, maxAUpBtn.y+8))
+    screen.blit(font.render("MaxA-", True, (255,255,255)), (maxADownBtn.x+8, maxADownBtn.y+8))
+
+    screen.blit(font.render("MinB+", True, (255,255,255)), (minBUpBtn.x+8, minBUpBtn.y+8))
+    screen.blit(font.render("MinB-", True, (255,255,255)), (minBDownBtn.x+8, minBDownBtn.y+8))
+    screen.blit(font.render("MaxB+", True, (255,255,255)), (maxBUpBtn.x+8, maxBUpBtn.y+8))
+    screen.blit(font.render("MaxB-", True, (255,255,255)), (maxBDownBtn.x+8, maxBDownBtn.y+8))
+
+    screen.blit(font.render("OffsetA+", True, (255,255,255)), (offsetUpAbtn.x+8, offsetUpAbtn.y+8))
+    screen.blit(font.render("OffsetA-", True, (255,255,255)), (offsetDownAbtn.x+8, offsetDownAbtn.y+8))
+    screen.blit(font.render("OffsetB+", True, (255,255,255)), (offsetUpBbtn.x+8, offsetUpBbtn.y+8))
+    screen.blit(font.render("OffsetB-", True, (255,255,255)), (offsetDownBbtn.x+8, offsetDownBbtn.y+8))
+
+    screen.blit(font.render("x1", True, (255,255,255)), (Multiplier1Btn.x+8, Multiplier1Btn.y+8))
+    screen.blit(font.render("x10", True, (255,255,255)), (Multiplier10Btn.x+8, Multiplier10Btn.y+8))
+###################################################################################################### END NEW BUTTONS
 
     # Servo Bars (visualize mapped 0-255)
-    def draw_bar(x, y, value, label):
-        color = "red"
-        pygame.draw.rect(screen, (50,50,50), (x, y, BAR_WIDTH_PX, 18))
-        pygame.draw.rect(screen, color, (x, y, int(value/255.0*BAR_WIDTH_PX), 18))
-        pygame.draw.rect(screen, (255,255,255), (x, y, BAR_WIDTH_PX, 18), 1)
-        screen.blit(font.render(f"{label}: {value}", True, (255,255,255)), (x + BAR_WIDTH_PX + 8, y - 2))
+    # def draw_bar(x, y, value, label):
+    #     color = "red"
+    #     pygame.draw.rect(screen, (50,50,50), (x, y, BAR_WIDTH_PX, 18))
+    #     pygame.draw.rect(screen, color, (x, y, int(value/255.0*BAR_WIDTH_PX), 18))
+    #     pygame.draw.rect(screen, (255,255,255), (x, y, BAR_WIDTH_PX, 18), 1)
+    #     screen.blit(font.render(f"{label}: {value}", True, (255,255,255)), (x + BAR_WIDTH_PX + 8, y - 2))
 
-    draw_bar(20, 20, baseA_val, "Base A")
-    draw_bar(20, 50, baseB_val, "Base B")
+    # draw_bar(20, 20, baseA_val, "Base A")
+    # draw_bar(20, 50, baseB_val, "Base B")
     screen.blit(font.render(f"Pen Status: {'DOWN' if pen_down else 'UP'}", True, ((0,255,0) if pen_down else (255,160,160))), (20, 85))
     screen.blit(font.render(f"Current Status: ", True, (255,255,140)), (20, 100))
     screen.blit(font.render(f"Speed: ", True, (255,255,140)), (20, 115))
