@@ -35,7 +35,36 @@ if ENABLE_SERIAL:
 # END SERIAL CODE
 
 
+# 8 bit function
+# def operate_DAC(baseA_val, baseB_val, pen_down): 
+#     """
+#     Send 12-bit DAC values and pen state over serial to the Arduino Due.
 
+#     Args:
+#         baseA_val (int): Value for DAC1 (0–4095)
+#         baseB_val (int): Value for DAC2 (0–4095)
+#         pen_down (bool or int): 1 if pen is down, 0 if up
+#         ser (serial.Serial): Open serial connection to Arduino
+#     """
+#     # Clamp to valid 12-bit range
+#     baseA_val = max(0, min(4095, int(baseA_val)))
+#     baseB_val = max(0, min(4095, int(baseB_val)))
+#     pen_state = 1 if pen_down else 0
+
+#     # === Option 1: ASCII protocol (readable, easy to debug) ===
+#     # Format: "baseA,baseB,pen\n"
+#     msg = f"{baseA_val},{baseB_val},{pen_state}\n"
+#     ser.write(msg.encode('ascii'))
+
+#     # === Option 2 (optional): binary protocol (faster, compact) ===
+#     # If you want binary 12-bit transmission instead:
+#     # packet = struct.pack('<HHB', baseA_val, baseB_val, pen_state)
+#     # ser.write(packet)
+
+#     # === Debug output ===
+#     print(f"Sent to Arduino → A:{baseA_val:4d}  B:{baseB_val:4d}  Pen:{pen_state}")
+
+#12 bit function
 def operate_DAC(baseA_val, baseB_val, pen_down): 
     """
     Send 12-bit DAC values and pen state over serial to the Arduino Due.
@@ -46,23 +75,30 @@ def operate_DAC(baseA_val, baseB_val, pen_down):
         pen_down (bool or int): 1 if pen is down, 0 if up
         ser (serial.Serial): Open serial connection to Arduino
     """
-    # Clamp to valid 12-bit range
-    baseA_val = max(0, min(4095, int(baseA_val)))
-    baseB_val = max(0, min(4095, int(baseB_val)))
-    pen_state = 1 if pen_down else 0
+    print(baseA_val, baseB_val, pen_down)
+    if ser and ser.is_open:
+        try:
+            # Clamp to valid 12-bit range
+            # baseA_val = max(0, min(4095, int(baseA_val)))
+            # baseB_val = max(0, min(4095, int(baseB_val)))
+            baseA_val = max(0, min(4095, int(baseA_val)))
+            baseB_val = max(0, min(4095, int(baseB_val)))
+            pen_state = 1 if pen_down else 0
 
-    # === Option 1: ASCII protocol (readable, easy to debug) ===
-    # Format: "baseA,baseB,pen\n"
-    msg = f"{baseA_val},{baseB_val},{pen_state}\n"
-    ser.write(msg.encode('ascii'))
+            # === Option 1: ASCII protocol (readable, easy to debug) ===
+            # Format: "baseA,baseB,pen\n"
+            msg = f"{baseA_val},{baseB_val},{pen_state}\n"
+            ser.write(msg.encode('ascii'))
 
-    # === Option 2 (optional): binary protocol (faster, compact) ===
-    # If you want binary 12-bit transmission instead:
-    # packet = struct.pack('<HHB', baseA_val, baseB_val, pen_state)
-    # ser.write(packet)
+            # === Option 2 (optional): binary protocol (faster, compact) ===
+            # If you want binary 12-bit transmission instead:
+            # packet = struct.pack('<HHB', baseA_val, baseB_val, pen_state)
+            # ser.write(packet)
 
-    # === Debug output ===
-    print(f"Sent to Arduino → A:{baseA_val:4d}  B:{baseB_val:4d}  Pen:{pen_state}")
+            # === Debug output ===
+            print(f"Sent to Arduino → A:{baseA_val:4d}  B:{baseB_val:4d}  Pen:{pen_state}")
+        except Exception as e:
+            print(f"Serial send error: {e}")
 
 
 # Worker thread that continuously runs a function with slider values

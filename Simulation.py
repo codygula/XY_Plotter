@@ -83,8 +83,11 @@ minA = 113
 maxA = 23
 
 minB = -223
-# maxB = -313
 maxB = -300
+
+# This is almost certainly a horrible way of doing this.
+bitMax = 4095
+bitMin = 0
 
 # Motion & sampling parameters
 STEP_SIZE_CM = 0.05             # pen step per frame in cm
@@ -274,17 +277,17 @@ clear_btn  = pygame.Rect(140, SCREEN_H - 60, 100, 35)
 
 ###################################################################################################### NEW BUTTONS
 
-minAUpBtn = pygame.Rect(20, SCREEN_H - 240, 75, 30)
-minADownBtn = pygame.Rect(20, SCREEN_H - 200, 75, 30)
+minAUpBtn = pygame.Rect(20, SCREEN_H - 250, 75, 30)
+minADownBtn = pygame.Rect(20, SCREEN_H - 215, 75, 30)
 
 maxAUpBtn = pygame.Rect(20, SCREEN_H - 160, 75, 30)
-maxADownBtn = pygame.Rect(20, SCREEN_H - 120, 75, 30)
+maxADownBtn = pygame.Rect(20, SCREEN_H - 125, 75, 30)
 
-minBUpBtn = pygame.Rect(100, SCREEN_H - 240, 75, 30)
-minBDownBtn = pygame.Rect(100, SCREEN_H - 200, 75, 30)
+minBUpBtn = pygame.Rect(100, SCREEN_H - 250, 75, 30)
+minBDownBtn = pygame.Rect(100, SCREEN_H - 215, 75, 30)
 
 maxBUpBtn = pygame.Rect(100, SCREEN_H - 160, 75, 30)
-maxBDownBtn = pygame.Rect(100, SCREEN_H - 120, 75, 30)
+maxBDownBtn = pygame.Rect(100, SCREEN_H - 125, 75, 30)
 
 offsetUpAbtn = pygame.Rect(20, SCREEN_H - 350, 75, 35)
 offsetDownAbtn = pygame.Rect(20, SCREEN_H - 310, 75, 35)
@@ -294,6 +297,16 @@ offsetDownBbtn = pygame.Rect(100, SCREEN_H - 310, 75, 35)
 
 Multiplier1Btn = pygame.Rect(100, SCREEN_H - 450, 75, 35)
 Multiplier10Btn = pygame.Rect(100, SCREEN_H - 410, 75, 35)
+Multiplier01Btn = pygame.Rect(20, SCREEN_H - 450, 75, 35)
+
+logBtn = pygame.Rect(20, SCREEN_H - 410, 75, 35)
+stopBtn = pygame.Rect(20, SCREEN_H - 550, 155, 75)
+
+
+ForceAUpBtn = pygame.Rect(800, SCREEN_H - 250, 75, 30)
+ForceADownBtn = pygame.Rect(800, SCREEN_H - 215, 75, 30)
+ForceBUpBtn = pygame.Rect(880, SCREEN_H - 250, 75, 30)
+ForceBDownBtn = pygame.Rect(880, SCREEN_H - 215, 75, 30)
 
 ###################################################################################################### END NEW BUTTONS
 
@@ -312,7 +325,6 @@ def compute_angle_range(base, l_prox, l_dist, step=0.25):
     if not angles:
         return (-math.pi, math.pi)
     return min(angles), max(angles)
-
 
 def map_angle_to_255(angle, min_a, max_a):
     # clamp and map
@@ -359,13 +371,15 @@ def map_to_255(value, min_val, max_val):
     # return max(0, min(255, scaled))  # clamp to [0,255]
 
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
+# This is almost certainly a horrible way of doing this.
+# bitMax = 4095
+# bitMin = 0
     #12 bit code
     #4095-0 code
     if max_val == min_val:
-        return 4095  # avoid division by zero
+        return bitMax  # avoid division by zero
     normalized = (value - min_val) / (max_val - min_val)
-    scaled = int(round((1 - normalized) * 4095))
+    scaled = int(round((1 - normalized) * bitMax))
     return max(0, min(4095, scaled))  # clamp to [0,255]
 
 # ---------------- State ----------------
@@ -403,9 +417,12 @@ def operate_DAC(baseA_val, baseB_val, pen_down):
         pen_down (bool or int): 1 if pen is down, 0 if up
         ser (serial.Serial): Open serial connection to Arduino
     """
+    print(baseA_val, baseB_val, pen_down)
     if ser and ser.is_open:
         try:
             # Clamp to valid 12-bit range
+            # baseA_val = max(0, min(4095, int(baseA_val)))
+            # baseB_val = max(0, min(4095, int(baseB_val)))
             baseA_val = max(0, min(4095, int(baseA_val)))
             baseB_val = max(0, min(4095, int(baseB_val)))
             pen_state = 1 if pen_down else 0
@@ -430,6 +447,8 @@ def operate_DAC(baseA_val, baseB_val, pen_down):
 
 
 # ---------------- Main Loop ----------------
+ForceA_Multiplier = 1
+ForceB_Multiplier = 1
 Multiplier =10
 running = True
 while running:
@@ -483,6 +502,25 @@ while running:
                 Multiplier = 10
             elif Multiplier1Btn.collidepoint(ev.pos):
                 Multiplier = 1
+            elif Multiplier01Btn.collidepoint(ev.pos):
+                Multiplier = 0.1
+            
+            elif logBtn.collidepoint(ev.pos):
+                DataFile.write(f"minA = {minA}, maxA = {maxA}, minB = {minB}, maxB = {maxB}\n")
+
+            elif stopBtn.collidepoint(ev.pos):
+                DataFile.write(f"STOP Button | minA = {minA}, maxA = {maxA}, minB = {minB}, maxB = {maxB}\n")
+                running = False
+
+            elif ForceAUpBtn.collidepoint(ev.pos):
+                ForceA_Multiplier += Multiplier
+            elif ForceADownBtn.collidepoint(ev.pos):
+                ForceA_Multiplier -= Multiplier
+            elif ForceBUpBtn.collidepoint(ev.pos):
+                ForceB_Multiplier += Multiplier
+            elif ForceBDownBtn.collidepoint(ev.pos):
+                ForceB_Multiplier -= Multiplier
+
 
     # ---------------- Pen motion (pen-up between subpaths) ----------------
     if path_idx < len(path):
@@ -609,18 +647,20 @@ while running:
             f"J1: {jL[0]:.2f},{jL[1]:.2f} cm",
             f"J2: {jR[0]:.2f},{jR[1]:.2f} cm",
             f"Pen: {pen[0]:.2f},{pen[1]:.2f} cm",
-            f"Multiplier = {Multiplier}",
+            f"Base A angle: {math.degrees(sL):.1f}°",
+            f"Base B angle: {math.degrees(sR):.1f}°",
+            f"Dists: A={math.hypot(pen[0]-baseA[0], pen[1]-baseA[1]):.2f}cm, B={math.hypot(pen[0]-baseB[0], pen[1]-baseB[1]):.2f}cm",
+            f"Mapped: A={baseA_val}, B={baseB_val}",
+            f" ",
             f"minA = {minA}",
             f"maxA = {maxA}",
             f"minB = {minB}",
             f"maxB = {maxB}",
-            f"Base A angle: {math.degrees(sL):.1f}°",
-            f"Base B angle: {math.degrees(sR):.1f}°",
+            f" ",
+            f"ForceA_Multiplier= {ForceA_Multiplier}",
+            f"ForceB_Multiplier= {ForceB_Multiplier}",
             f"forceA = {ForceA}",
             f"forceB = {ForceB}",
-            f"Dists: A={math.hypot(pen[0]-baseA[0], pen[1]-baseA[1]):.2f}cm, B={math.hypot(pen[0]-baseB[0], pen[1]-baseB[1]):.2f}cm",
-            f"Mapped: A={baseA_val}, B={baseB_val}",
-            "Pen: " + ("DOWN" if pen_down else "UP")
         ]
         for i, line in enumerate(info):
             screen.blit(font.render(line, True, (220,220,220)), (info_x, info_y + 18 * i))
@@ -630,7 +670,8 @@ while running:
 
     # Buttons
     pygame.draw.rect(screen, (80,150,255), replay_btn)
-    pygame.draw.rect(screen, (255,120,80), clear_btn)
+    pygame.draw.rect(screen, (80,150,255), clear_btn)
+
 ###################################################################################################### NEW BUTTONS
     pygame.draw.rect(screen, (255,120,80), minAUpBtn)
     pygame.draw.rect(screen, (255,120,80), minADownBtn)
@@ -649,29 +690,53 @@ while running:
 
     pygame.draw.rect(screen, (255,120,80), Multiplier10Btn)
     pygame.draw.rect(screen, (255,120,80), Multiplier1Btn)
-###################################################################################################### END NEW BUTTONS    
+    pygame.draw.rect(screen, (255,120,80), Multiplier01Btn)    
+    pygame.draw.rect(screen, (255,120,255), logBtn)
+    pygame.draw.rect(screen, (255,20,80), stopBtn)
 
+
+    pygame.draw.rect(screen, (255,120,80), ForceAUpBtn)
+    pygame.draw.rect(screen, (255,120,80), ForceADownBtn)
+    pygame.draw.rect(screen, (255,120,80), ForceBUpBtn)
+    pygame.draw.rect(screen, (255,120,80), ForceBDownBtn)
+
+
+###################################################################################################### END NEW BUTTONS    
 
     screen.blit(font.render("Replay", True, (255,255,255)), (replay_btn.x+20, replay_btn.y+8))
     screen.blit(font.render("Clear", True, (255,255,255)), (clear_btn.x+30, clear_btn.y+8))
+
 ###################################################################################################### NEW BUTTONS
-    screen.blit(font.render("MinA+", True, (255,255,255)), (minAUpBtn.x+8, minAUpBtn.y+8))
-    screen.blit(font.render("MinA-", True, (255,255,255)), (minADownBtn.x+8, minADownBtn.y+8))
-    screen.blit(font.render("MaxA+", True, (255,255,255)), (maxAUpBtn.x+8, maxAUpBtn.y+8))
-    screen.blit(font.render("MaxA-", True, (255,255,255)), (maxADownBtn.x+8, maxADownBtn.y+8))
+    screen.blit(font.render("A+", True, (255,255,255)), (minAUpBtn.x+8, minAUpBtn.y+8))
+    screen.blit(font.render("A-", True, (255,255,255)), (minADownBtn.x+8, minADownBtn.y+8))
+    screen.blit(font.render("A+", True, (255,255,255)), (maxAUpBtn.x+8, maxAUpBtn.y+8))
+    screen.blit(font.render("A-", True, (255,255,255)), (maxADownBtn.x+8, maxADownBtn.y+8))
 
-    screen.blit(font.render("MinB+", True, (255,255,255)), (minBUpBtn.x+8, minBUpBtn.y+8))
-    screen.blit(font.render("MinB-", True, (255,255,255)), (minBDownBtn.x+8, minBDownBtn.y+8))
-    screen.blit(font.render("MaxB+", True, (255,255,255)), (maxBUpBtn.x+8, maxBUpBtn.y+8))
-    screen.blit(font.render("MaxB-", True, (255,255,255)), (maxBDownBtn.x+8, maxBDownBtn.y+8))
+    screen.blit(font.render("B+", True, (255,255,255)), (minBUpBtn.x+8, minBUpBtn.y+8))
+    screen.blit(font.render("B-", True, (255,255,255)), (minBDownBtn.x+8, minBDownBtn.y+8))
+    screen.blit(font.render("B+", True, (255,255,255)), (maxBUpBtn.x+8, maxBUpBtn.y+8))
+    screen.blit(font.render("B-", True, (255,255,255)), (maxBDownBtn.x+8, maxBDownBtn.y+8))
 
-    screen.blit(font.render("OffsetA+", True, (255,255,255)), (offsetUpAbtn.x+8, offsetUpAbtn.y+8))
-    screen.blit(font.render("OffsetA-", True, (255,255,255)), (offsetDownAbtn.x+8, offsetDownAbtn.y+8))
-    screen.blit(font.render("OffsetB+", True, (255,255,255)), (offsetUpBbtn.x+8, offsetUpBbtn.y+8))
-    screen.blit(font.render("OffsetB-", True, (255,255,255)), (offsetDownBbtn.x+8, offsetDownBbtn.y+8))
+    screen.blit(font.render("A+", True, (255,255,255)), (offsetUpAbtn.x+8, offsetUpAbtn.y+8))
+    screen.blit(font.render("A-", True, (255,255,255)), (offsetDownAbtn.x+8, offsetDownAbtn.y+8))
+    screen.blit(font.render("B+", True, (255,255,255)), (offsetUpBbtn.x+8, offsetUpBbtn.y+8))
+    screen.blit(font.render("B-", True, (255,255,255)), (offsetDownBbtn.x+8, offsetDownBbtn.y+8))
 
     screen.blit(font.render("x1", True, (255,255,255)), (Multiplier1Btn.x+8, Multiplier1Btn.y+8))
     screen.blit(font.render("x10", True, (255,255,255)), (Multiplier10Btn.x+8, Multiplier10Btn.y+8))
+    screen.blit(font.render("x0.1", True, (255,255,255)), (Multiplier01Btn.x+8, Multiplier01Btn.y+8))
+
+    screen.blit(font.render("Log", True, (255,255,255)), (logBtn.x+8, logBtn.y+8))
+    screen.blit(font.render("STOP", True, (255,255,255)), (stopBtn.x+20, stopBtn.y+20))
+
+    screen.blit(font.render("A+", True, (255,255,255)), (ForceAUpBtn.x+8, ForceAUpBtn.y+8))
+    screen.blit(font.render("A-", True, (255,255,255)), (ForceADownBtn.x+8, ForceADownBtn.y+8))
+    screen.blit(font.render("B+", True, (255,255,255)), (ForceBUpBtn.x+8, ForceBUpBtn.y+8))
+    screen.blit(font.render("B-", True, (255,255,255)), (ForceBDownBtn.x+8, ForceBDownBtn.y+8))
+    screen.blit(font.render("Operate Function Multiplier", True, (255,255,255)), (ForceAUpBtn.x-80, ForceAUpBtn.y-25))
+    screen.blit(font.render("Offset", True, (255,255,255)), (offsetUpAbtn.x+160, offsetUpAbtn.y+30))
+    screen.blit(font.render("Min", True, (255,255,255)), (minAUpBtn.x+160, minAUpBtn.y+30))
+    screen.blit(font.render("Max", True, (255,255,255)), (maxAUpBtn.x+160, maxAUpBtn.y+30))
 ###################################################################################################### END NEW BUTTONS
 
     # Servo Bars (visualize mapped 0-255)
@@ -687,13 +752,14 @@ while running:
     screen.blit(font.render(f"Pen Status: {'DOWN' if pen_down else 'UP'}", True, ((0,255,0) if pen_down else (255,160,160))), (20, 85))
     screen.blit(font.render(f"Current Status: ", True, (255,255,140)), (20, 100))
     screen.blit(font.render(f"Speed: ", True, (255,255,140)), (20, 115))
-
+    screen.blit(font.render(f"Multiplier: x{Multiplier}", True, (255,120,80)), (20, 160))
     # DAC control function
     # operate_DAC(baseA_val, baseB_val, pen_down)
-    operate_DAC(ForceA, ForceB, pen_down)
+
+    operate_DAC(ForceA*ForceA_Multiplier, ForceB*ForceB_Multiplier, pen_down)
 
     # Debug log (right side)
-    dbg_x = SCREEN_W - 360; dbg_y = 220
+    dbg_x = SCREEN_W - 700; dbg_y = 560
     screen.blit(font.render("Debug Log:", True, (255,255,140)), (dbg_x, dbg_y))
     for i, msg in enumerate(debug_log):
         screen.blit(font.render(msg, True, (200,200,200)), (dbg_x, dbg_y + 18 * (i + 1)))
@@ -711,8 +777,10 @@ while running:
     # pygame.draw.circle(screen, (0, 0, 0), (SCREEN_W - 30, 30), 10, 2)
 
 
-
+    
     pygame.display.flip()
     clock.tick(FPS)
 
 pygame.quit()
+
+
