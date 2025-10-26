@@ -44,7 +44,9 @@ if ENABLE_SERIAL:
 # END SERIAL CODE
 
 
-SVG_FILE = "/home/gula/Telautograph/XY_Plotter/rectangle.svg"    # file to load (if missing, fallback shape used)
+# SVG_FILE = "/home/gula/Telautograph/XY_Plotter/rectangle.svg"    # file to load (if missing, fallback shape used)
+
+SVG_FILE = "/home/gula/Telautograph/XY_Plotter/yaml-16-svgrepo-com.svg"
 
 # runs in continuous loop when set to 1. For now, it only turns on one line of code in "While running: loop"
 CALIBRATION_MODE = 1
@@ -56,6 +58,7 @@ DataFile = open("DACData.txt", "w")
 # SVG_FILE = "/home/gula/Telautograph/XY_Plotter/output.svg"
 
 # ---------------- USER-CONFIGURABLE CONSTANTS ----------------
+# FPS = 60
 FPS = 60
 
 # This is the size of the entire Python program screen.
@@ -79,10 +82,19 @@ BASE_B_Y = -RECT_H_CM +3
 
 # min and max angles. Mostly just estimates. Used what what ChatGPT code said was the starting angles (113, -223) and added 90 degrees.
 # Used with map_to_255() to calculate ForceA and ForceB to operate DACs.
-minA = 113
-maxA = 23
+# minA = 113
+# maxA = 23
+# minB = -223
+# maxB = -300
 
-minB = -223
+# minA = 113
+# maxA = 23
+# minB = -203
+# maxB = -300
+
+minA = 93
+maxA = 23
+minB = -200
 maxB = -300
 
 # This is almost certainly a horrible way of doing this.
@@ -297,7 +309,7 @@ offsetDownBbtn = pygame.Rect(100, SCREEN_H - 310, 75, 35)
 
 Multiplier1Btn = pygame.Rect(100, SCREEN_H - 450, 75, 35)
 Multiplier10Btn = pygame.Rect(100, SCREEN_H - 410, 75, 35)
-Multiplier01Btn = pygame.Rect(20, SCREEN_H - 450, 75, 35)
+# Multiplier01Btn = pygame.Rect(20, SCREEN_H - 450, 75, 35)
 
 logBtn = pygame.Rect(20, SCREEN_H - 410, 75, 35)
 stopBtn = pygame.Rect(20, SCREEN_H - 550, 155, 75)
@@ -307,6 +319,9 @@ ForceAUpBtn = pygame.Rect(800, SCREEN_H - 250, 75, 30)
 ForceADownBtn = pygame.Rect(800, SCREEN_H - 215, 75, 30)
 ForceBUpBtn = pygame.Rect(880, SCREEN_H - 250, 75, 30)
 ForceBDownBtn = pygame.Rect(880, SCREEN_H - 215, 75, 30)
+
+FPSUpBtn = pygame.Rect(200, SCREEN_H - 550, 75, 30)
+FPSDownBtn = pygame.Rect(200, SCREEN_H - 510, 75, 30)
 
 ###################################################################################################### END NEW BUTTONS
 
@@ -407,7 +422,7 @@ reset()
         # except Exception as e:
         #     print(f"Serial send error: {e}")
 
-def operate_DAC(baseA_val, baseB_val, pen_down): 
+def operate_DAC(baseA_val, baseB_val, pen_down, energize): 
     """
     Send 12-bit DAC values and pen state over serial to the Arduino Due.
 
@@ -417,7 +432,7 @@ def operate_DAC(baseA_val, baseB_val, pen_down):
         pen_down (bool or int): 1 if pen is down, 0 if up
         ser (serial.Serial): Open serial connection to Arduino
     """
-    print(baseA_val, baseB_val, pen_down)
+    print(baseA_val, baseB_val, pen_down, energize)
     if ser and ser.is_open:
         try:
             # Clamp to valid 12-bit range
@@ -425,11 +440,12 @@ def operate_DAC(baseA_val, baseB_val, pen_down):
             # baseB_val = max(0, min(4095, int(baseB_val)))
             baseA_val = max(0, min(4095, int(baseA_val)))
             baseB_val = max(0, min(4095, int(baseB_val)))
-            pen_state = 1 if pen_down else 0
-
+            # pen_state = 1 if pen_down else 0
+            pen_state = 0 if pen_down else 1
+            energize_state = 0 if energize else 1
             # === Option 1: ASCII protocol (readable, easy to debug) ===
             # Format: "baseA,baseB,pen\n"
-            msg = f"{baseA_val},{baseB_val},{pen_state}\n"
+            msg = f"{baseA_val},{baseB_val},{pen_state},{energize_state}\n"
             ser.write(msg.encode('ascii'))
 
             # === Option 2 (optional): binary protocol (faster, compact) ===
@@ -451,335 +467,368 @@ ForceA_Multiplier = 1
 ForceB_Multiplier = 1
 Multiplier =10
 running = True
+pause = False
+energize = True
 while running:
-    for ev in pygame.event.get():
-        if ev.type == pygame.QUIT:
-            running = False
-        elif ev.type == pygame.KEYDOWN and ev.key == pygame.K_ESCAPE:
-            running = False
-        elif ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1:
-            if replay_btn.collidepoint(ev.pos):
-                reset()
-            elif clear_btn.collidepoint(ev.pos):
-                trace.clear()
-                log("Trace cleared.")
-            
-            elif minAUpBtn.collidepoint(ev.pos):
-                minA += Multiplier
-            elif minADownBtn.collidepoint(ev.pos):
-                minA -= Multiplier
- 
-            elif maxAUpBtn.collidepoint(ev.pos):
-                maxA += Multiplier
-            elif maxADownBtn.collidepoint(ev.pos):
-                maxA -= Multiplier
- 
-            elif minBUpBtn.collidepoint(ev.pos):
-                minB += Multiplier
-            elif minBDownBtn.collidepoint(ev.pos):
-                minB -= Multiplier
- 
-            elif maxBUpBtn.collidepoint(ev.pos):
-                maxB += Multiplier
-            elif maxBDownBtn.collidepoint(ev.pos):
-                maxB -= Multiplier
+    if pause == True:
+        font = pygame.font.SysFont('Arial', 50)
+        overlay = font.render("Paused (Press P to resume)", True, (255, 255, 255))
+        screen.blit(overlay, (100, 250))  # Display pause message
 
-            elif offsetUpAbtn.collidepoint(ev.pos):
-                minA += Multiplier
-                maxA += Multiplier
-            elif offsetDownAbtn.collidepoint(ev.pos):
-                minA -= Multiplier
-                maxA -= Multiplier
- 
-            elif offsetUpBbtn.collidepoint(ev.pos):
-                minB += Multiplier
-                maxB += Multiplier
-            elif offsetDownBbtn.collidepoint(ev.pos):
-                minB -= Multiplier
-                maxB -= Multiplier
-
-            elif Multiplier10Btn.collidepoint(ev.pos):
-                Multiplier = 10
-            elif Multiplier1Btn.collidepoint(ev.pos):
-                Multiplier = 1
-            elif Multiplier01Btn.collidepoint(ev.pos):
-                Multiplier = 0.1
-            
-            elif logBtn.collidepoint(ev.pos):
-                DataFile.write(f"minA = {minA}, maxA = {maxA}, minB = {minB}, maxB = {maxB}\n")
-
-            elif stopBtn.collidepoint(ev.pos):
-                DataFile.write(f"STOP Button | minA = {minA}, maxA = {maxA}, minB = {minB}, maxB = {maxB}\n")
+    if pause == False:
+        for ev in pygame.event.get():
+            if ev.type == pygame.QUIT:
                 running = False
-
-            elif ForceAUpBtn.collidepoint(ev.pos):
-                ForceA_Multiplier += Multiplier
-            elif ForceADownBtn.collidepoint(ev.pos):
-                ForceA_Multiplier -= Multiplier
-            elif ForceBUpBtn.collidepoint(ev.pos):
-                ForceB_Multiplier += Multiplier
-            elif ForceBDownBtn.collidepoint(ev.pos):
-                ForceB_Multiplier -= Multiplier
-
-
-    # ---------------- Pen motion (pen-up between subpaths) ----------------
-    if path_idx < len(path):
-        # Skip consecutive None separators and ensure pen is up during travel between strokes
-        while path_idx < len(path) and path[path_idx] is None:
-            if pen_down:
-                pen_down = False
-                log("Pen lifted (end of stroke).")
-            path_idx += 1
-
-        if path_idx < len(path):
-            target = path[path_idx]
-            # target is a (x,y) in cm in normalized coordinates
-            dx = target[0] - pen[0]; dy = target[1] - pen[1]
-            dist = math.hypot(dx, dy)
-            if not pen_down:
-                # traveling (pen up) to stroke start
-                if dist <= STEP_SIZE_CM:
-                    pen = target
-                    pen_down = True
-                    path_idx += 1
-                    log(f"Pen lowered at start of stroke: {pen}")
-                else:
-                    pen = (pen[0] + dx / dist * STEP_SIZE_CM, pen[1] + dy / dist * STEP_SIZE_CM)
-            else:
-                # drawing (pen down) through consecutive points until next None
-                if dist <= STEP_SIZE_CM:
-                    pen = target
-                    path_idx += 1
-                    trace.append(pen)
-                else:
-                    new_pos = (pen[0] + dx / dist * STEP_SIZE_CM, pen[1] + dy / dist * STEP_SIZE_CM)
-                    trace.append(new_pos)
-                    pen = new_pos
-    else:
-        # finished path; return home with pen up
-        home = (rect_left, rect_bottom)
-        dx = home[0] - pen[0]; dy = home[1] - pen[1]
-        dist = math.hypot(dx, dy)
-        if dist > STEP_SIZE_CM:
-            if pen_down:
-                pen_down = False
-                log("Pen lifted (returning home).")
-            pen = (pen[0] + dx / dist * STEP_SIZE_CM, pen[1] + dy / dist * STEP_SIZE_CM)
-            if CALIBRATION_MODE == 1: 
-                reset()
-        else:
-            pen_down = False
-
-    # ---------------- Kinematics ----------------
-    ikL = two_link_ik(baseA, L1, L2, pen)
-    ikR = two_link_ik(baseB, L3, L4, pen)
-    if not ikL or not ikR:
-        # unreachable — log once and skip drawing update for this frame
-        log("Target unreachable by one or both chains.")
-        # continue to draw rest of UI but skip joint drawing
-    else:
-        sL,eL,jL = choose_solution(ikL, baseA, L1, L2)
-        sR,eR,jR = choose_solution(ikR, baseB, L3, L4)
-
-    # ---------------- Servo mapping ----------------
-    # baseA_val = map_angle_to_255(sL, minA, maxA) if ikL else 0
-    # baseB_val = map_angle_to_255(sR, minB, maxB) if ikR else 0
-
-    baseA_val = map_angle_to_4095(sL, minA, maxA) if ikL else 0
-    baseB_val = map_angle_to_4095(sR, minB, maxB) if ikR else 0
-
-    # Added this
-    # ForceA = Default_angle_A - math.degrees(sL)
-    # ForceB = Default_angle_B - math.degrees(sR)
-
-    ForceA = map_to_255(math.degrees(sL), minA, maxA)
-    ForceB = map_to_255(math.degrees(sR), minB, maxB)
-
-    # ---------------- Drawing ----------------
-    screen.fill((22,22,28))
-    # draw valid rectangle (centered at (0,0) in cm coordinates)
-    top_left = to_screen((rect_left, rect_top + RECT_H_CM))
-    rect_w = cm_to_px(RECT_W_CM)
-    rect_h = cm_to_px(RECT_H_CM)
-    rect_rect = pygame.Rect(top_left[0], top_left[1], rect_w, rect_h)
-    pygame.draw.rect(screen, (38,38,46), rect_rect)
-    pygame.draw.rect(screen, (200,200,200), rect_rect, 2)
-
-    # draw trace
-    if len(trace) > 1:
-        pts = [to_screen(p) for p in trace]
-        pygame.draw.lines(screen, (100,255,140), False, pts, 2)
-
-    # draw bases and links if ik available
-    if ikL and ikR:
-        # left chain
-        left_base_screen = to_screen(baseA)
-        left_joint_screen = to_screen(jL)
-        pen_screen = to_screen(pen)
-        pygame.draw.circle(screen, (200,80,80), left_base_screen, 6)
-        pygame.draw.line(screen, (120,200,255), left_base_screen, left_joint_screen, 5)
-        pygame.draw.circle(screen, (255,200,70), left_joint_screen, 5)
-        pygame.draw.line(screen, (120,200,255), left_joint_screen, pen_screen, 4)
-
-        # right chain
-        right_base_screen = to_screen(baseB)
-        right_joint_screen = to_screen(jR)
-        pygame.draw.circle(screen, (200,80,80), right_base_screen, 6)
-        pygame.draw.line(screen, (120,200,255), right_base_screen, right_joint_screen, 5)
-        pygame.draw.circle(screen, (255,200,70), right_joint_screen, 5)
-        pygame.draw.line(screen, (120,200,255), right_joint_screen, pen_screen, 4)
-
-        # pen
-        pygame.draw.circle(screen, (255,80,120), pen_screen, 5)
-        # pen outline if up
-        if not pen_down:
-            pygame.draw.circle(screen, (255,255,255), pen_screen, 6, 1)
-
-        # label joints and link lengths near them
-        screen.blit(font.render(f"L1={L1:.2f}cm", True, (220,220,220)), (left_base_screen[0]-40, left_base_screen[1]+10))
-        screen.blit(font.render(f"L2={L2:.2f}cm", True, (220,220,220)), (left_joint_screen[0]-40, left_joint_screen[1]+10))
-        screen.blit(font.render(f"L3={L3:.2f}cm", True, (220,220,220)), (right_base_screen[0]-10, right_base_screen[1]+10))
-        screen.blit(font.render(f"L4={L4:.2f}cm", True, (220,220,220)), (right_joint_screen[0]-10, right_joint_screen[1]+10))
-
-        # coordinates display small
-        info_x = SCREEN_W - 320; info_y = 10
-        info = [
-            f"J1: {jL[0]:.2f},{jL[1]:.2f} cm",
-            f"J2: {jR[0]:.2f},{jR[1]:.2f} cm",
-            f"Pen: {pen[0]:.2f},{pen[1]:.2f} cm",
-            f"Base A angle: {math.degrees(sL):.1f}°",
-            f"Base B angle: {math.degrees(sR):.1f}°",
-            f"Dists: A={math.hypot(pen[0]-baseA[0], pen[1]-baseA[1]):.2f}cm, B={math.hypot(pen[0]-baseB[0], pen[1]-baseB[1]):.2f}cm",
-            f"Mapped: A={baseA_val}, B={baseB_val}",
-            f" ",
-            f"minA = {minA}",
-            f"maxA = {maxA}",
-            f"minB = {minB}",
-            f"maxB = {maxB}",
-            f" ",
-            f"ForceA_Multiplier= {ForceA_Multiplier}",
-            f"ForceB_Multiplier= {ForceB_Multiplier}",
-            f"forceA = {ForceA}",
-            f"forceB = {ForceB}",
-        ]
-        for i, line in enumerate(info):
-            screen.blit(font.render(line, True, (220,220,220)), (info_x, info_y + 18 * i))
-
-    else:
-        screen.blit(font.render("IK unreachable for current pen position", True, (255,120,120)), (20, 140))
-
-    # Buttons
-    pygame.draw.rect(screen, (80,150,255), replay_btn)
-    pygame.draw.rect(screen, (80,150,255), clear_btn)
-
-###################################################################################################### NEW BUTTONS
-    pygame.draw.rect(screen, (255,120,80), minAUpBtn)
-    pygame.draw.rect(screen, (255,120,80), minADownBtn)
-    pygame.draw.rect(screen, (255,120,80), maxAUpBtn)
-    pygame.draw.rect(screen, (255,120,80), maxADownBtn)
-
-    pygame.draw.rect(screen, (255,120,80), minBUpBtn)
-    pygame.draw.rect(screen, (255,120,80), minBDownBtn)
-    pygame.draw.rect(screen, (255,120,80), maxBUpBtn)
-    pygame.draw.rect(screen, (255,120,80), maxBDownBtn)
-
-    pygame.draw.rect(screen, (255,120,80), offsetUpAbtn)
-    pygame.draw.rect(screen, (255,120,80), offsetDownAbtn)
-    pygame.draw.rect(screen, (255,120,80), offsetUpBbtn)
-    pygame.draw.rect(screen, (255,120,80), offsetDownBbtn)
-
-    pygame.draw.rect(screen, (255,120,80), Multiplier10Btn)
-    pygame.draw.rect(screen, (255,120,80), Multiplier1Btn)
-    pygame.draw.rect(screen, (255,120,80), Multiplier01Btn)    
-    pygame.draw.rect(screen, (255,120,255), logBtn)
-    pygame.draw.rect(screen, (255,20,80), stopBtn)
-
-
-    pygame.draw.rect(screen, (255,120,80), ForceAUpBtn)
-    pygame.draw.rect(screen, (255,120,80), ForceADownBtn)
-    pygame.draw.rect(screen, (255,120,80), ForceBUpBtn)
-    pygame.draw.rect(screen, (255,120,80), ForceBDownBtn)
-
-
-###################################################################################################### END NEW BUTTONS    
-
-    screen.blit(font.render("Replay", True, (255,255,255)), (replay_btn.x+20, replay_btn.y+8))
-    screen.blit(font.render("Clear", True, (255,255,255)), (clear_btn.x+30, clear_btn.y+8))
-
-###################################################################################################### NEW BUTTONS
-    screen.blit(font.render("A+", True, (255,255,255)), (minAUpBtn.x+8, minAUpBtn.y+8))
-    screen.blit(font.render("A-", True, (255,255,255)), (minADownBtn.x+8, minADownBtn.y+8))
-    screen.blit(font.render("A+", True, (255,255,255)), (maxAUpBtn.x+8, maxAUpBtn.y+8))
-    screen.blit(font.render("A-", True, (255,255,255)), (maxADownBtn.x+8, maxADownBtn.y+8))
-
-    screen.blit(font.render("B+", True, (255,255,255)), (minBUpBtn.x+8, minBUpBtn.y+8))
-    screen.blit(font.render("B-", True, (255,255,255)), (minBDownBtn.x+8, minBDownBtn.y+8))
-    screen.blit(font.render("B+", True, (255,255,255)), (maxBUpBtn.x+8, maxBUpBtn.y+8))
-    screen.blit(font.render("B-", True, (255,255,255)), (maxBDownBtn.x+8, maxBDownBtn.y+8))
-
-    screen.blit(font.render("A+", True, (255,255,255)), (offsetUpAbtn.x+8, offsetUpAbtn.y+8))
-    screen.blit(font.render("A-", True, (255,255,255)), (offsetDownAbtn.x+8, offsetDownAbtn.y+8))
-    screen.blit(font.render("B+", True, (255,255,255)), (offsetUpBbtn.x+8, offsetUpBbtn.y+8))
-    screen.blit(font.render("B-", True, (255,255,255)), (offsetDownBbtn.x+8, offsetDownBbtn.y+8))
-
-    screen.blit(font.render("x1", True, (255,255,255)), (Multiplier1Btn.x+8, Multiplier1Btn.y+8))
-    screen.blit(font.render("x10", True, (255,255,255)), (Multiplier10Btn.x+8, Multiplier10Btn.y+8))
-    screen.blit(font.render("x0.1", True, (255,255,255)), (Multiplier01Btn.x+8, Multiplier01Btn.y+8))
-
-    screen.blit(font.render("Log", True, (255,255,255)), (logBtn.x+8, logBtn.y+8))
-    screen.blit(font.render("STOP", True, (255,255,255)), (stopBtn.x+20, stopBtn.y+20))
-
-    screen.blit(font.render("A+", True, (255,255,255)), (ForceAUpBtn.x+8, ForceAUpBtn.y+8))
-    screen.blit(font.render("A-", True, (255,255,255)), (ForceADownBtn.x+8, ForceADownBtn.y+8))
-    screen.blit(font.render("B+", True, (255,255,255)), (ForceBUpBtn.x+8, ForceBUpBtn.y+8))
-    screen.blit(font.render("B-", True, (255,255,255)), (ForceBDownBtn.x+8, ForceBDownBtn.y+8))
-    screen.blit(font.render("Operate Function Multiplier", True, (255,255,255)), (ForceAUpBtn.x-80, ForceAUpBtn.y-25))
-    screen.blit(font.render("Offset", True, (255,255,255)), (offsetUpAbtn.x+160, offsetUpAbtn.y+30))
-    screen.blit(font.render("Min", True, (255,255,255)), (minAUpBtn.x+160, minAUpBtn.y+30))
-    screen.blit(font.render("Max", True, (255,255,255)), (maxAUpBtn.x+160, maxAUpBtn.y+30))
-###################################################################################################### END NEW BUTTONS
-
-    # Servo Bars (visualize mapped 0-255)
-    # def draw_bar(x, y, value, label):
-    #     color = "red"
-    #     pygame.draw.rect(screen, (50,50,50), (x, y, BAR_WIDTH_PX, 18))
-    #     pygame.draw.rect(screen, color, (x, y, int(value/255.0*BAR_WIDTH_PX), 18))
-    #     pygame.draw.rect(screen, (255,255,255), (x, y, BAR_WIDTH_PX, 18), 1)
-    #     screen.blit(font.render(f"{label}: {value}", True, (255,255,255)), (x + BAR_WIDTH_PX + 8, y - 2))
-
-    # draw_bar(20, 20, baseA_val, "Base A")
-    # draw_bar(20, 50, baseB_val, "Base B")
-    screen.blit(font.render(f"Pen Status: {'DOWN' if pen_down else 'UP'}", True, ((0,255,0) if pen_down else (255,160,160))), (20, 85))
-    screen.blit(font.render(f"Current Status: ", True, (255,255,140)), (20, 100))
-    screen.blit(font.render(f"Speed: ", True, (255,255,140)), (20, 115))
-    screen.blit(font.render(f"Multiplier: x{Multiplier}", True, (255,120,80)), (20, 160))
-    # DAC control function
-    # operate_DAC(baseA_val, baseB_val, pen_down)
-
-    operate_DAC(ForceA*ForceA_Multiplier, ForceB*ForceB_Multiplier, pen_down)
-
-    # Debug log (right side)
-    dbg_x = SCREEN_W - 700; dbg_y = 560
-    screen.blit(font.render("Debug Log:", True, (255,255,140)), (dbg_x, dbg_y))
-    for i, msg in enumerate(debug_log):
-        screen.blit(font.render(msg, True, (200,200,200)), (dbg_x, dbg_y + 18 * (i + 1)))
-
-
-        # ---------- CONNECTION INDICATOR ----------
-    # now = time.time()
-    # if not ser or not ser.is_open:
-    #     color = (200, 50, 50)       # red = disconnected
-    # elif now - last_send_time < 1.0:
-    #     color = (50, 220, 50)       # green = actively sending
-    # else:
-    #     color = (220, 200, 50)      # yellow = idle but connected
-    # pygame.draw.circle(screen, color, (SCREEN_W - 30, 30), 10)
-    # pygame.draw.circle(screen, (0, 0, 0), (SCREEN_W - 30, 30), 10, 2)
-
-
+            elif ev.type == pygame.KEYDOWN and ev.key == pygame.K_ESCAPE:
+                running = False
+            elif ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1:
+                if replay_btn.collidepoint(ev.pos):
+                    reset()
+                elif clear_btn.collidepoint(ev.pos):
+                    trace.clear()
+                    log("Trace cleared.")
+                
+                elif minAUpBtn.collidepoint(ev.pos):
+                    minA += Multiplier
+                elif minADownBtn.collidepoint(ev.pos):
+                    minA -= Multiplier
     
-    pygame.display.flip()
-    clock.tick(FPS)
+                elif maxAUpBtn.collidepoint(ev.pos):
+                    maxA += Multiplier
+                elif maxADownBtn.collidepoint(ev.pos):
+                    maxA -= Multiplier
+    
+                elif minBUpBtn.collidepoint(ev.pos):
+                    minB += Multiplier
+                elif minBDownBtn.collidepoint(ev.pos):
+                    minB -= Multiplier
+    
+                elif maxBUpBtn.collidepoint(ev.pos):
+                    maxB += Multiplier
+                elif maxBDownBtn.collidepoint(ev.pos):
+                    maxB -= Multiplier
+
+                elif offsetUpAbtn.collidepoint(ev.pos):
+                    minA += Multiplier
+                    maxA += Multiplier
+                elif offsetDownAbtn.collidepoint(ev.pos):
+                    minA -= Multiplier
+                    maxA -= Multiplier
+    
+                elif offsetUpBbtn.collidepoint(ev.pos):
+                    minB += Multiplier
+                    maxB += Multiplier
+                elif offsetDownBbtn.collidepoint(ev.pos):
+                    minB -= Multiplier
+                    maxB -= Multiplier
+
+                elif Multiplier10Btn.collidepoint(ev.pos):
+                    Multiplier = 10
+                elif Multiplier1Btn.collidepoint(ev.pos):
+                    Multiplier = 1
+                # elif Multiplier01Btn.collidepoint(ev.pos):
+                #     Multiplier = 0.1
+                
+                elif logBtn.collidepoint(ev.pos):
+                    DataFile.write(f"minA = {minA}, maxA = {maxA}, minB = {minB}, maxB = {maxB}\n")
+
+                elif stopBtn.collidepoint(ev.pos):
+                    print(f"STOP Button | minA = {minA}, maxA = {maxA}, minB = {minB}, maxB = {maxB}\n")
+                    DataFile.write(f"STOP Button | minA = {minA}, maxA = {maxA}, minB = {minB}, maxB = {maxB}\n")
+                    running = False
+
+                elif ForceAUpBtn.collidepoint(ev.pos):
+                    ForceA_Multiplier += 0.1
+                elif ForceADownBtn.collidepoint(ev.pos):
+                    ForceA_Multiplier -= 0.1
+                elif ForceBUpBtn.collidepoint(ev.pos):
+                    ForceB_Multiplier += 0.1
+                elif ForceBDownBtn.collidepoint(ev.pos):
+                    ForceB_Multiplier -= 0.1
+
+                elif FPSUpBtn.collidepoint(ev.pos):
+                    if Multiplier ==1 and FPS < 60:
+                        FPS += 1
+                    elif Multiplier == 10 and FPS < 45:
+                        FPS += 10
+
+
+                elif FPSDownBtn.collidepoint(ev.pos):
+                    if Multiplier ==1 and FPS > 1:
+                        FPS -= 1
+                    elif Multiplier == 10 and FPS > 15:
+                        FPS -= 10
+
+
+
+
+        # ---------------- Pen motion (pen-up between subpaths) ----------------
+        if path_idx < len(path):
+            # Skip consecutive None separators and ensure pen is up during travel between strokes
+            while path_idx < len(path) and path[path_idx] is None:
+                if pen_down:
+                    pen_down = False
+                    log("Pen lifted (end of stroke).")
+                path_idx += 1
+
+            if path_idx < len(path):
+                target = path[path_idx]
+                # target is a (x,y) in cm in normalized coordinates
+                dx = target[0] - pen[0]; dy = target[1] - pen[1]
+                dist = math.hypot(dx, dy)
+                if not pen_down:
+                    # traveling (pen up) to stroke start
+                    if dist <= STEP_SIZE_CM:
+                        pen = target
+                        pen_down = True
+                        path_idx += 1
+                        log(f"Pen lowered at start of stroke: {pen}")
+                    else:
+                        pen = (pen[0] + dx / dist * STEP_SIZE_CM, pen[1] + dy / dist * STEP_SIZE_CM)
+                else:
+                    # drawing (pen down) through consecutive points until next None
+                    if dist <= STEP_SIZE_CM:
+                        pen = target
+                        path_idx += 1
+                        trace.append(pen)
+                    else:
+                        new_pos = (pen[0] + dx / dist * STEP_SIZE_CM, pen[1] + dy / dist * STEP_SIZE_CM)
+                        trace.append(new_pos)
+                        pen = new_pos
+        else:
+            # finished path; return home with pen up
+            home = (rect_left, rect_bottom)
+            dx = home[0] - pen[0]; dy = home[1] - pen[1]
+            dist = math.hypot(dx, dy)
+            if dist > STEP_SIZE_CM:
+                if pen_down:
+                    pen_down = False
+                    log("Pen lifted (returning home).")
+                pen = (pen[0] + dx / dist * STEP_SIZE_CM, pen[1] + dy / dist * STEP_SIZE_CM)
+                if CALIBRATION_MODE == 1: 
+                    reset()
+            else:
+                pen_down = False
+
+        # ---------------- Kinematics ----------------
+        ikL = two_link_ik(baseA, L1, L2, pen)
+        ikR = two_link_ik(baseB, L3, L4, pen)
+        if not ikL or not ikR:
+            # unreachable — log once and skip drawing update for this frame
+            log("Target unreachable by one or both chains.")
+            # continue to draw rest of UI but skip joint drawing
+        else:
+            sL,eL,jL = choose_solution(ikL, baseA, L1, L2)
+            sR,eR,jR = choose_solution(ikR, baseB, L3, L4)
+
+        # ---------------- Servo mapping ----------------
+        # baseA_val = map_angle_to_255(sL, minA, maxA) if ikL else 0
+        # baseB_val = map_angle_to_255(sR, minB, maxB) if ikR else 0
+
+        baseA_val = map_angle_to_4095(sL, minA, maxA) if ikL else 0
+        baseB_val = map_angle_to_4095(sR, minB, maxB) if ikR else 0
+
+        # Added this
+        # ForceA = Default_angle_A - math.degrees(sL)
+        # ForceB = Default_angle_B - math.degrees(sR)
+
+        ForceA = map_to_255(math.degrees(sL), minA, maxA)
+        ForceB = map_to_255(math.degrees(sR), minB, maxB)
+
+        # ---------------- Drawing ----------------
+        screen.fill((22,22,28))
+        # draw valid rectangle (centered at (0,0) in cm coordinates)
+        top_left = to_screen((rect_left, rect_top + RECT_H_CM))
+        rect_w = cm_to_px(RECT_W_CM)
+        rect_h = cm_to_px(RECT_H_CM)
+        rect_rect = pygame.Rect(top_left[0], top_left[1], rect_w, rect_h)
+        pygame.draw.rect(screen, (38,38,46), rect_rect)
+        pygame.draw.rect(screen, (200,200,200), rect_rect, 2)
+
+        # draw trace
+        if len(trace) > 1:
+            pts = [to_screen(p) for p in trace]
+            pygame.draw.lines(screen, (100,255,140), False, pts, 2)
+
+        # draw bases and links if ik available
+        if ikL and ikR:
+            # left chain
+            left_base_screen = to_screen(baseA)
+            left_joint_screen = to_screen(jL)
+            pen_screen = to_screen(pen)
+            pygame.draw.circle(screen, (200,80,80), left_base_screen, 6)
+            pygame.draw.line(screen, (120,200,255), left_base_screen, left_joint_screen, 5)
+            pygame.draw.circle(screen, (255,200,70), left_joint_screen, 5)
+            pygame.draw.line(screen, (120,200,255), left_joint_screen, pen_screen, 4)
+
+            # right chain
+            right_base_screen = to_screen(baseB)
+            right_joint_screen = to_screen(jR)
+            pygame.draw.circle(screen, (200,80,80), right_base_screen, 6)
+            pygame.draw.line(screen, (120,200,255), right_base_screen, right_joint_screen, 5)
+            pygame.draw.circle(screen, (255,200,70), right_joint_screen, 5)
+            pygame.draw.line(screen, (120,200,255), right_joint_screen, pen_screen, 4)
+
+            # pen
+            pygame.draw.circle(screen, (255,80,120), pen_screen, 5)
+            # pen outline if up
+            if not pen_down:
+                pygame.draw.circle(screen, (255,255,255), pen_screen, 6, 1)
+
+            # label joints and link lengths near them
+            screen.blit(font.render(f"L1={L1:.2f}cm", True, (220,220,220)), (left_base_screen[0]-40, left_base_screen[1]+10))
+            screen.blit(font.render(f"L2={L2:.2f}cm", True, (220,220,220)), (left_joint_screen[0]-40, left_joint_screen[1]+10))
+            screen.blit(font.render(f"L3={L3:.2f}cm", True, (220,220,220)), (right_base_screen[0]-10, right_base_screen[1]+10))
+            screen.blit(font.render(f"L4={L4:.2f}cm", True, (220,220,220)), (right_joint_screen[0]-10, right_joint_screen[1]+10))
+
+            # coordinates display small
+            info_x = SCREEN_W - 320; info_y = 10
+            info = [
+                f"J1: {jL[0]:.2f},{jL[1]:.2f} cm",
+                f"J2: {jR[0]:.2f},{jR[1]:.2f} cm",
+                f"Pen: {pen[0]:.2f},{pen[1]:.2f} cm",
+                f"Base A angle: {math.degrees(sL):.1f}°",
+                f"Base B angle: {math.degrees(sR):.1f}°",
+                f"Dists: A={math.hypot(pen[0]-baseA[0], pen[1]-baseA[1]):.2f}cm, B={math.hypot(pen[0]-baseB[0], pen[1]-baseB[1]):.2f}cm",
+                f"Mapped: A={baseA_val}, B={baseB_val}",
+                f" ",
+                f"minA = {minA}",
+                f"maxA = {maxA}",
+                f"minB = {minB}",
+                f"maxB = {maxB}",
+                f" ",
+                f"ForceA_Multiplier= {ForceA_Multiplier}",
+                f"ForceB_Multiplier= {ForceB_Multiplier}",
+                f"forceA = {ForceA}",
+                f"forceB = {ForceB}",
+            ]
+            for i, line in enumerate(info):
+                screen.blit(font.render(line, True, (220,220,220)), (info_x, info_y + 18 * i))
+
+        else:
+            screen.blit(font.render("IK unreachable for current pen position", True, (255,120,120)), (20, 140))
+
+        # Buttons
+        pygame.draw.rect(screen, (80,150,255), replay_btn)
+        pygame.draw.rect(screen, (80,150,255), clear_btn)
+
+    ###################################################################################################### NEW BUTTONS
+        pygame.draw.rect(screen, (255,120,80), minAUpBtn)
+        pygame.draw.rect(screen, (255,120,80), minADownBtn)
+        pygame.draw.rect(screen, (255,120,80), maxAUpBtn)
+        pygame.draw.rect(screen, (255,120,80), maxADownBtn)
+
+        pygame.draw.rect(screen, (255,120,80), minBUpBtn)
+        pygame.draw.rect(screen, (255,120,80), minBDownBtn)
+        pygame.draw.rect(screen, (255,120,80), maxBUpBtn)
+        pygame.draw.rect(screen, (255,120,80), maxBDownBtn)
+
+        pygame.draw.rect(screen, (255,120,80), offsetUpAbtn)
+        pygame.draw.rect(screen, (255,120,80), offsetDownAbtn)
+        pygame.draw.rect(screen, (255,120,80), offsetUpBbtn)
+        pygame.draw.rect(screen, (255,120,80), offsetDownBbtn)
+
+        pygame.draw.rect(screen, (255,120,80), Multiplier10Btn)
+        pygame.draw.rect(screen, (255,120,80), Multiplier1Btn)
+        # pygame.draw.rect(screen, (255,120,80), Multiplier01Btn)    
+        pygame.draw.rect(screen, (255,120,255), logBtn)
+        pygame.draw.rect(screen, (255,20,80), stopBtn)
+
+
+        pygame.draw.rect(screen, (255,120,80), ForceAUpBtn)
+        pygame.draw.rect(screen, (255,120,80), ForceADownBtn)
+        pygame.draw.rect(screen, (255,120,80), ForceBUpBtn)
+        pygame.draw.rect(screen, (255,120,80), ForceBDownBtn)
+
+        pygame.draw.rect(screen, (80,150,255), FPSUpBtn)
+        pygame.draw.rect(screen, (80,150,255), FPSDownBtn)
+
+
+
+    ###################################################################################################### END NEW BUTTONS    
+
+        screen.blit(font.render("Replay", True, (255,255,255)), (replay_btn.x+20, replay_btn.y+8))
+        screen.blit(font.render("Clear", True, (255,255,255)), (clear_btn.x+30, clear_btn.y+8))
+
+    ###################################################################################################### NEW BUTTONS
+        screen.blit(font.render("A+", True, (255,255,255)), (minAUpBtn.x+8, minAUpBtn.y+8))
+        screen.blit(font.render("A-", True, (255,255,255)), (minADownBtn.x+8, minADownBtn.y+8))
+        screen.blit(font.render("A+", True, (255,255,255)), (maxAUpBtn.x+8, maxAUpBtn.y+8))
+        screen.blit(font.render("A-", True, (255,255,255)), (maxADownBtn.x+8, maxADownBtn.y+8))
+
+        screen.blit(font.render("B+", True, (255,255,255)), (minBUpBtn.x+8, minBUpBtn.y+8))
+        screen.blit(font.render("B-", True, (255,255,255)), (minBDownBtn.x+8, minBDownBtn.y+8))
+        screen.blit(font.render("B+", True, (255,255,255)), (maxBUpBtn.x+8, maxBUpBtn.y+8))
+        screen.blit(font.render("B-", True, (255,255,255)), (maxBDownBtn.x+8, maxBDownBtn.y+8))
+
+        screen.blit(font.render("A+", True, (255,255,255)), (offsetUpAbtn.x+8, offsetUpAbtn.y+8))
+        screen.blit(font.render("A-", True, (255,255,255)), (offsetDownAbtn.x+8, offsetDownAbtn.y+8))
+        screen.blit(font.render("B+", True, (255,255,255)), (offsetUpBbtn.x+8, offsetUpBbtn.y+8))
+        screen.blit(font.render("B-", True, (255,255,255)), (offsetDownBbtn.x+8, offsetDownBbtn.y+8))
+
+        screen.blit(font.render("x1", True, (255,255,255)), (Multiplier1Btn.x+8, Multiplier1Btn.y+8))
+        screen.blit(font.render("x10", True, (255,255,255)), (Multiplier10Btn.x+8, Multiplier10Btn.y+8))
+        # screen.blit(font.render("x0.1", True, (255,255,255)), (Multiplier01Btn.x+8, Multiplier01Btn.y+8))
+
+        screen.blit(font.render("Log", True, (255,255,255)), (logBtn.x+8, logBtn.y+8))
+        screen.blit(font.render("STOP", True, (255,255,255)), (stopBtn.x+20, stopBtn.y+20))
+
+        screen.blit(font.render("A+", True, (255,255,255)), (ForceAUpBtn.x+8, ForceAUpBtn.y+8))
+        screen.blit(font.render("A-", True, (255,255,255)), (ForceADownBtn.x+8, ForceADownBtn.y+8))
+        screen.blit(font.render("B+", True, (255,255,255)), (ForceBUpBtn.x+8, ForceBUpBtn.y+8))
+        screen.blit(font.render("B-", True, (255,255,255)), (ForceBDownBtn.x+8, ForceBDownBtn.y+8))
+        screen.blit(font.render("Operate Function Multiplier", True, (255,255,255)), (ForceAUpBtn.x-80, ForceAUpBtn.y-25))
+        screen.blit(font.render("Offset", True, (255,255,255)), (offsetUpAbtn.x+160, offsetUpAbtn.y+30))
+        screen.blit(font.render("Min", True, (255,255,255)), (minAUpBtn.x+160, minAUpBtn.y+30))
+        screen.blit(font.render("Max", True, (255,255,255)), (maxAUpBtn.x+160, maxAUpBtn.y+30))
+
+
+        screen.blit(font.render("FPS+", True, (255,255,255)), (FPSUpBtn.x+8, FPSUpBtn.y+8))
+        screen.blit(font.render("FPS-", True, (255,255,255)), (FPSDownBtn.x+8, FPSDownBtn.y+8))
+
+    ###################################################################################################### END NEW BUTTONS
+
+        # Servo Bars (visualize mapped 0-255)
+        # def draw_bar(x, y, value, label):
+        #     color = "red"
+        #     pygame.draw.rect(screen, (50,50,50), (x, y, BAR_WIDTH_PX, 18))
+        #     pygame.draw.rect(screen, color, (x, y, int(value/255.0*BAR_WIDTH_PX), 18))
+        #     pygame.draw.rect(screen, (255,255,255), (x, y, BAR_WIDTH_PX, 18), 1)
+        #     screen.blit(font.render(f"{label}: {value}", True, (255,255,255)), (x + BAR_WIDTH_PX + 8, y - 2))
+
+        # draw_bar(20, 20, baseA_val, "Base A")
+        # draw_bar(20, 50, baseB_val, "Base B")
+        screen.blit(font.render(f"Pen Status: {'DOWN' if pen_down else 'UP'}", True, ((0,255,0) if pen_down else (255,160,160))), (20, 85))
+        screen.blit(font.render(f"Current Status: ", True, (255,255,140)), (20, 100))
+        screen.blit(font.render(f"Speed (FPS): {FPS}", True, (255,255,140)), (20, 115))
+        screen.blit(font.render(f"Multiplier: x{Multiplier}", True, (255,120,80)), (20, 160))
+        # DAC control function
+        # operate_DAC(baseA_val, baseB_val, pen_down)
+
+        operate_DAC(ForceA*ForceA_Multiplier, ForceB*ForceB_Multiplier, pen_down, energize)
+
+        # Debug log (right side)
+        dbg_x = SCREEN_W - 700; dbg_y = 560
+        screen.blit(font.render("Debug Log:", True, (255,255,140)), (dbg_x, dbg_y))
+        for i, msg in enumerate(debug_log):
+            screen.blit(font.render(msg, True, (200,200,200)), (dbg_x, dbg_y + 18 * (i + 1)))
+
+
+            # ---------- CONNECTION INDICATOR ----------
+        # now = time.time()
+        # if not ser or not ser.is_open:
+        #     color = (200, 50, 50)       # red = disconnected
+        # elif now - last_send_time < 1.0:
+        #     color = (50, 220, 50)       # green = actively sending
+        # else:
+        #     color = (220, 200, 50)      # yellow = idle but connected
+        # pygame.draw.circle(screen, color, (SCREEN_W - 30, 30), 10)
+        # pygame.draw.circle(screen, (0, 0, 0), (SCREEN_W - 30, 30), 10, 2)
+
+
+        
+        pygame.display.flip()
+        clock.tick(FPS)
 
 pygame.quit()
 
