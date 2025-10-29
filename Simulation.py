@@ -23,7 +23,7 @@ import struct
 import serial
 
 # SERIAL_PORT = 'Linux/thing/here'  
-SERIAL_PORT = '/dev/ttyACM1'
+# SERIAL_PORT = '/dev/ttyACM1'
 SERIAL_PORT = '/dev/ttyACM1'
 BAUD_RATE = 115200
 ENABLE_SERIAL = True
@@ -46,7 +46,8 @@ if ENABLE_SERIAL:
 
 # SVG_FILE = "/home/gula/Telautograph/XY_Plotter/rectangle.svg"    # file to load (if missing, fallback shape used)
 
-SVG_FILE = "/home/gula/Telautograph/XY_Plotter/yaml-16-svgrepo-com.svg"
+SVG_FILE = "/home/gula/Telautograph/XY_Plotter/output.svg"
+
 
 # runs in continuous loop when set to 1. For now, it only turns on one line of code in "While running: loop"
 CALIBRATION_MODE = 1
@@ -211,6 +212,7 @@ def load_and_normalize_svg(filename):
         print("paths = ", paths)
         print("_ = ", _)
     except Exception as e:
+        print(f"load_and_normalize_svg() SVG load failed: {e}")
         log(f"load_and_normalize_svg() SVG load failed: {e}")
         return []
 
