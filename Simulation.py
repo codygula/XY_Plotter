@@ -46,11 +46,11 @@ if ENABLE_SERIAL:
 
 # SVG_FILE = "/home/gula/Telautograph/XY_Plotter/rectangle.svg"    # file to load (if missing, fallback shape used)
 
-SVG_FILE = "/home/gula/Telautograph/XY_Plotter/output.svg"
+SVG_FILE = "/home/gula/Telautograph/XY_Plotter/svgExamples/rectangle.svg"
 
 
 # runs in continuous loop when set to 1. For now, it only turns on one line of code in "While running: loop"
-CALIBRATION_MODE = 1
+CALIBRATION_MODE = 0
 DataFile = open("DACData.txt", "w") 
 # DataFile.write(f"TESTING! \n")
 
@@ -470,7 +470,7 @@ ForceB_Multiplier = 1
 Multiplier =10
 running = True
 pause = False
-energize = True
+energize = False
 while running:
     if pause == True:
         font = pygame.font.SysFont('Arial', 50)
@@ -607,6 +607,7 @@ while running:
                     pen_down = False
                     log("Pen lifted (returning home).")
                 pen = (pen[0] + dx / dist * STEP_SIZE_CM, pen[1] + dy / dist * STEP_SIZE_CM)
+                energize = False
                 if CALIBRATION_MODE == 1: 
                     reset()
             else:
@@ -801,7 +802,7 @@ while running:
         # draw_bar(20, 20, baseA_val, "Base A")
         # draw_bar(20, 50, baseB_val, "Base B")
         screen.blit(font.render(f"Pen Status: {'DOWN' if pen_down else 'UP'}", True, ((0,255,0) if pen_down else (255,160,160))), (20, 85))
-        screen.blit(font.render(f"Current Status: ", True, (255,255,140)), (20, 100))
+        screen.blit(font.render(f"Energized: {energize} ", True, (255,255,140)), (20, 100))
         screen.blit(font.render(f"Speed (FPS): {FPS}", True, (255,255,140)), (20, 115))
         screen.blit(font.render(f"Multiplier: x{Multiplier}", True, (255,120,80)), (20, 160))
         # DAC control function
