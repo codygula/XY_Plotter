@@ -40,7 +40,7 @@ while running:
     # listern for things and stuff with apis or magic of something.
     # when a thing or stuff happens, run:
         # Text_to_svg
-        # Simulation.py
+        # Plotter.py
     # continue waiting
     # print("while loop running")
     pass
