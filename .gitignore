@@ -1,0 +1,5 @@
+__pycache__/
+output.svg
+trace.svg
+plotter_last_run.log
+DACData.txt

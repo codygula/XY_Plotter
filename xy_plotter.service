@@ -1,0 +1,26 @@
+# systemd service: starts main.py automatically when the Raspberry Pi boots.
+#
+# Install (on the Pi):
+#   sudo cp xy_plotter.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now xy_plotter.service
+#
+# Edit User, WorkingDirectory and ExecStart below if your username, repo
+# location or Python (e.g. a virtualenv) are different.
+
+[Unit]
+Description=Telautograph XY plotter controller (main.py)
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=gula
+SupplementaryGroups=dialout
+WorkingDirectory=/home/gula/Telautograph/XY_Plotter
+ExecStart=/usr/bin/python3 -u /home/gula/Telautograph/XY_Plotter/main.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

@@ -54,6 +54,9 @@ HERSHEY_FONT = {
     '9': [(6,3), (5,4), (1,4), (0,3), (0,1), (1,0), (5,0), (6,1), (6,6), (5,7), (1,7)],
 }
 
+GLYPH_HEIGHT = 7  # height of capital letters in HERSHEY_FONT units
+
+
 def create_single_line_svg(input_file, output_file, width=800, height=600, 
                           char_width=10, line_height=15, scale=2):
     """
@@ -70,7 +73,18 @@ def create_single_line_svg(input_file, output_file, width=800, height=600,
     """
     # Read text file
     with open(input_file, 'r', encoding='utf-8') as f:
-        text_content = f.read().upper()  # Convert to uppercase
+        text_content = f.read()
+    return text_to_svg(text_content, output_file, width, height, char_width, line_height, scale)
+
+
+def text_to_svg(text, output_file, width=800, height=600,
+                char_width=10, line_height=15, scale=2):
+    """
+    Convert a string of text to single-line SVG paths for XY plotter.
+    Same arguments as create_single_line_svg(), but takes the text directly.
+    Use '\n' in the string for multiple lines.
+    """
+    text_content = text.upper()  # Convert to uppercase
     
     lines = text_content.split('\n')
     
@@ -82,12 +96,8 @@ def create_single_line_svg(input_file, output_file, width=800, height=600,
         'viewBox': f'0 0 {width} {height}'
     })
     
-    # Add background
-    ET.SubElement(svg, 'rect', {
-        'width': str(width),
-        'height': str(height),
-        'fill': 'white'
-    })
+    # No background <rect>: svgpathtools converts rectangles to paths, so
+    # Plotter.py would draw it as a border around the page.
     
     # Create group for all paths
     g = ET.SubElement(svg, 'g', {
@@ -127,21 +137,26 @@ def create_single_line_svg(input_file, output_file, width=800, height=600,
             x_offset = line_x + char_idx * char_width * scale
             y_offset = line_y
             
-            # Build path data
-            path_data = []
+            # Split the character into strokes at each pen lift (None).
+            # Each stroke becomes its own <path> so Plotter.py lifts the pen
+            # between strokes (it only lifts between separate paths).
+            strokes = [[]]
             for point in char_data:
                 if point is None:
-                    # Pen lift - start new subpath
-                    continue
+                    strokes.append([])
                 else:
-                    x = x_offset + point[0] * scale
-                    y = y_offset + point[1] * scale
-                    if not path_data or char_data[char_data.index(point) - 1] is None:
-                        path_data.append(f'M {x:.2f} {y:.2f}')
-                    else:
-                        path_data.append(f'L {x:.2f} {y:.2f}')
+                    strokes[-1].append(point)
             
-            if path_data:
+            for stroke in strokes:
+                if len(stroke) < 2:
+                    continue
+                path_data = []
+                for i, (px, py) in enumerate(stroke):
+                    x = x_offset + px * scale
+                    # Font data is y-up (0 = baseline, 7 = top) but SVG is
+                    # y-down, so flip each glyph to keep letters upright.
+                    y = y_offset + (GLYPH_HEIGHT - py) * scale
+                    path_data.append(f'{"M" if i == 0 else "L"} {x:.2f} {y:.2f}')
                 ET.SubElement(g, 'path', {
                     'd': ' '.join(path_data)
                 })
@@ -152,6 +167,7 @@ def create_single_line_svg(input_file, output_file, width=800, height=600,
     tree.write(output_file, encoding='unicode', xml_declaration=True)
     print(f"Single-line SVG created: {output_file}")
     print(f"Optimized for XY plotter - each letter is a single-stroke path")
+    return output_file
 
 
 # Example usage

@@ -17,6 +17,7 @@ A few optional commands can be typed into the terminal while it runs
 Usage:
     python3 Plotter.py                 # uses SVG_FILE below
     python3 Plotter.py path/to/file.svg
+    python3 Plotter.py path/to/file.svg --exit-when-done   # used by main.py
 
 Mostly made by ChatGPT
 """
@@ -60,8 +61,14 @@ if ENABLE_SERIAL:
 SVG_FILE = "/home/gula/Telautograph/XY_Plotter/svgExamples/rectangle.svg"
 
 # Optional: pass an SVG path on the command line to override SVG_FILE
-if len(sys.argv) > 1:
-    SVG_FILE = sys.argv[1]
+_args = [a for a in sys.argv[1:] if not a.startswith("--")]
+if _args:
+    SVG_FILE = _args[0]
+
+# When True, exit once the drawing is finished and the pen is back home,
+# instead of waiting for more commands. Also turned on by --exit-when-done.
+# In this mode a missing/unreadable SVG is an error (no fallback shape).
+EXIT_WHEN_DONE = "--exit-when-done" in sys.argv
 
 
 # runs in continuous loop when set to 1. For now, it only turns on one line of code in "While running: loop"
@@ -292,6 +299,11 @@ def fallback_shape():
 path = load_and_normalize_svg(SVG_FILE)
 print(path)
 if not path:
+    if EXIT_WHEN_DONE:
+        print(f"ERROR: could not load SVG {SVG_FILE!r}; nothing to plot.")
+        if ser and ser.is_open:
+            ser.close()
+        sys.exit(1)
     log("Using fallback shape.")
     path = fallback_shape()
 
@@ -343,11 +355,12 @@ def map_to_255(value, min_val, max_val):
 
 # ---------------- State ----------------
 def reset():
-    global pen, trace, path_idx, pen_down
+    global pen, trace, path_idx, pen_down, finished
     pen = (rect_left, rect_bottom)   # lower-left corner in cm
     trace = []
     path_idx = 0
     pen_down = False
+    finished = False
     log("Replay initiated.")
 reset()
 
@@ -420,7 +433,7 @@ def print_status():
         f"Energized: {energize}",
         f"Speed (FPS): {FPS}",
         f"Paused: {pause}",
-        f"Path progress: {min(path_idx, len(path))}/{len(path)} points, trace = {len(trace)} points",
+        f"Path progress: {min(path_idx, len(path))}/{len(path)} points, trace = {sum(p is not None for p in trace)} points",
     ]
     if hud is None:
         lines.append("IK unreachable for current pen position")
@@ -462,14 +475,22 @@ def save_trace_svg(filename=TRACE_SVG_FILE):
     for b in (baseA, baseB):
         bx, by = to_screen(b)
         parts.append(f'<circle cx="{bx}" cy="{by}" r="6" fill="rgb(200,80,80)"/>')
-    if len(trace) > 1:
-        pts = " ".join(f"{x},{y}" for x, y in (to_screen(p) for p in trace))
-        parts.append(f'<polyline points="{pts}" fill="none" stroke="rgb(100,255,140)" stroke-width="2"/>')
+    # One polyline per pen-down stroke (None marks where the pen was lifted)
+    strokes = [[]]
+    for p in trace:
+        if p is None:
+            strokes.append([])
+        else:
+            strokes[-1].append(p)
+    for stroke in strokes:
+        if len(stroke) > 1:
+            pts = " ".join(f"{x},{y}" for x, y in (to_screen(p) for p in stroke))
+            parts.append(f'<polyline points="{pts}" fill="none" stroke="rgb(100,255,140)" stroke-width="2"/>')
     parts.append("</svg>")
     try:
         with open(filename, "w") as f:
             f.write("\n".join(parts))
-        log(f"Trace saved to {filename} ({len(trace)} points).")
+        log(f"Trace saved to {filename} ({sum(p is not None for p in trace)} points).")
     except Exception as e:
         log(f"Trace save failed: {e}")
 
@@ -544,6 +565,7 @@ try:
                         pen = target
                         pen_down = True
                         path_idx += 1
+                        trace.append(None)   # stroke break (pen was up)
                         log(f"Pen lowered at start of stroke: {pen}")
                     else:
                         pen = (pen[0] + dx / dist * STEP_SIZE_CM, pen[1] + dy / dist * STEP_SIZE_CM)
@@ -572,6 +594,7 @@ try:
                     reset()
             else:
                 pen_down = False
+                finished = True
 
         # ---------------- Kinematics ----------------
         ikL = two_link_ik(baseA, L1, L2, pen)
@@ -598,6 +621,10 @@ try:
 
             # DAC control function
             operate_DAC(ForceA*ForceA_Multiplier, ForceB*ForceB_Multiplier, pen_down, energize)
+
+        if finished and EXIT_WHEN_DONE:
+            log("Drawing finished.")
+            break
 
         # ---------------- Frame timing (replaces clock.tick(FPS)) ----------------
         next_frame += 1.0 / FPS
