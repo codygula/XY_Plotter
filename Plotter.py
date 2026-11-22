@@ -5,7 +5,7 @@ Plotter.py  (headless 5-bar plotter driver - no pygame, no GUI)
  - adaptive sampling of SVG curves (fidelity scaling)
  - automatic SVG normalization (scale & center to drawing area)
  - pen-up between SVG subpaths, persistent trace, replay & clear
- - 12-bit DAC output over serial, debug log, configurable constants
+ - 12-bit DAC output over spi, debug log, configurable constants
 
 The calibration constants (minA/maxA/minB/maxB, Force multipliers) are fixed
 below. To re-tune them interactively, use the pygame GUI version in
@@ -19,7 +19,6 @@ Usage:
     python3 Plotter.py path/to/file.svg
     python3 Plotter.py path/to/file.svg --exit-when-done   # used by main.py
 
-Mostly made by ChatGPT
 """
 
 import math, time, sys, threading, queue
@@ -27,34 +26,33 @@ from svgpathtools import svg2paths
 from collections import deque
 import numpy as np
 import struct
+import spidev
+import gpiozero 
 
-# SERIAL CODE
-# SERIAL CODE
-# SERIAL CODE
-# For controlling Arduino Due 12 bit DACs.
-import serial
 
-# SERIAL_PORT = 'Linux/thing/here'
-# SERIAL_PORT = '/dev/ttyACM1'
-SERIAL_PORT = '/dev/ttyACM1'
-BAUD_RATE = 115200
-ENABLE_SERIAL = True
 
-# SERIAL SETUP
-ser = None
-if ENABLE_SERIAL:
-    try:
-        ser = serial.Serial(SERIAL_PORT, BAUD_RATE, timeout=0)
-        time.sleep(2)  # Give the Arduino time to reset
-        print(f"Connected to {SERIAL_PORT}")
-    except Exception as e:
-        print(f"Serial error: {e}")
-        ser = None
+SPI_BUS = 0
+DAC1_CS = 0   # Chip Select for DAC #1 (sine wave)
+DAC2_CS = 1   # Chip Select for DAC #2 (180° shifted)
 
-# END SERIAL CODE
-# END SERIAL CODE
-# END SERIAL CODE
+# None of the 4 constant below are used. Can be deleted. (?)
 
+WAVE_FREQ = 1.0       # Hz
+SAMPLE_RATE = 2000     # samples/sec (recommended: 1k–5k)
+AMPLITUDE = 4095        # Full-scale for MCP4821 (12-bit)
+OFFSET = 0
+
+# --------------------------
+# Initialize SPI objects
+# --------------------------
+
+spi_dac1 = spidev.SpiDev()
+spi_dac1.open(SPI_BUS, DAC1_CS)
+spi_dac1.max_speed_hz = 1000000  # 1 MHz
+
+spi_dac2 = spidev.SpiDev()
+spi_dac2.open(SPI_BUS, DAC2_CS)
+spi_dac2.max_speed_hz = 1000000  # 1 MHz
 
 # SVG_FILE = "/home/gula/Telautograph/XY_Plotter/rectangle.svg"    # file to load (if missing, fallback shape used)
 
@@ -79,7 +77,6 @@ CALIBRATION_MODE = 0
 # SVG_FILE = "/home/gula/Telautograph/XY_Plotter/output.svg"
 
 # ---------------- USER-CONFIGURABLE CONSTANTS ----------------
-# FPS = 60
 FPS = 60
 
 # Canvas size / scale used when the trace is saved to an SVG ("save" command).
@@ -301,8 +298,8 @@ print(path)
 if not path:
     if EXIT_WHEN_DONE:
         print(f"ERROR: could not load SVG {SVG_FILE!r}; nothing to plot.")
-        if ser and ser.is_open:
-            ser.close()
+        # if ser and ser.is_open:
+        #     ser.close()
         sys.exit(1)
     log("Using fallback shape.")
     path = fallback_shape()
@@ -364,40 +361,34 @@ def reset():
     log("Replay initiated.")
 reset()
 
-
-def operate_DAC(baseA_val, baseB_val, pen_down, energize):
+def write_dac(spi, value):
     """
-    Send 12-bit DAC values and pen state over serial to the Arduino Due.
+    Writes a 12-bit value to an MCP4821 DAC.
+    value: 0–4095
+    Configuration bits:
+       - A/B: 0   (MCP4821 only has channel A)
+       - BUF: 0   (unbuffered)
+       - GA: 1    (1x gain)
+       - SHDN: 1  (active)
+    """
+    value &= 0x0FFF
+    command = 0x3000 | value   # 0b0011xxxx_xxxxxxxx
+    high = (command >> 8) & 0xFF
+    low = command & 0xFF
+    spi.xfer2([high, low])
+
+def operate_DAC(baseA_val, baseB_val, pen_down, energize): 
+    """
+    Send 12-bit DAC values over spi to MCP4821 DAC.
 
     Args:
         baseA_val (int): Value for DAC1 (0–4095)
         baseB_val (int): Value for DAC2 (0–4095)
-        pen_down (bool or int): 1 if pen is down, 0 if up
-        energize (bool): energize state
+  
     """
-    print(baseA_val, baseB_val, pen_down, energize)
-    if ser and ser.is_open:
-        try:
-            # Clamp to valid 12-bit range
-            baseA_val = max(0, min(4095, int(baseA_val)))
-            baseB_val = max(0, min(4095, int(baseB_val)))
-            # pen_state = 1 if pen_down else 0
-            pen_state = 0 if pen_down else 1
-            energize_state = 0 if energize else 1
-            # === Option 1: ASCII protocol (readable, easy to debug) ===
-            # Format: "baseA,baseB,pen\n"
-            msg = f"{baseA_val},{baseB_val},{pen_state},{energize_state}\n"
-            ser.write(msg.encode('ascii'))
-
-            # === Option 2 (optional): binary protocol (faster, compact) ===
-            # If you want binary 12-bit transmission instead:
-            # packet = struct.pack('<HHB', baseA_val, baseB_val, pen_state)
-            # ser.write(packet)
-
-            # === Debug output ===
-            print(f"Sent to Arduino → A:{baseA_val:4d}  B:{baseB_val:4d}  Pen:{pen_state}")
-        except Exception as e:
-            print(f"Serial send error: {e}")
+    print("A= ", baseA_val, " B= ", baseB_val, " Pen= ", pen_down, " Energize= ", energize)
+    write_dac(spi_dac1, baseA_val)
+    write_dac(spi_dac2, baseB_val)
 
 
 # ---------------- Console commands ----------------
@@ -518,7 +509,25 @@ def handle_command(cmd):
         print(f"Unknown command: {cmd!r} (type 'help' for a list)")
 
 
+
 # ---------------- Main Loop ----------------
+# ---------------- Main Loop ----------------
+# ---------------- Main Loop ----------------
+# ---------------- Main Loop ----------------
+# ---------------- Main Loop ----------------
+# ---------------- Main Loop ----------------
+# ---------------- Main Loop ----------------
+# ---------------- Main Loop ----------------
+# ---------------- Main Loop ----------------
+
+print("Main loop start")
+ControlEnergize = gpiozero.OutputDevice(pin=13, initial_value=False)
+ControlEnergize.on()
+
+
+print("ControlEnergize.on()")
+
+
 running = True
 pause = False
 energize = False
@@ -636,6 +645,6 @@ try:
 
 except KeyboardInterrupt:
     print("\nInterrupted (Ctrl+C).")
-finally:
-    if ser and ser.is_open:
-        ser.close()
+# finally:
+#     if ser and ser.is_open:
+#         ser.close()
