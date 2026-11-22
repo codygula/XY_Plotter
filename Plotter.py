@@ -382,7 +382,7 @@ def write_dac(spi, value):
        - GA: 1    (1x gain)
        - SHDN: 1  (active)
     """
-    value &= 0x0FFF
+    value = max(0, min(4095, int(round(value))))   # clamp to 12-bit range (no wrap-around)
     command = 0x3000 | value   # 0b0011xxxx_xxxxxxxx
     high = (command >> 8) & 0xFF
     low = command & 0xFF
