@@ -26,6 +26,7 @@ from svgpathtools import svg2paths
 from collections import deque
 import numpy as np
 import struct
+import signal
 import spidev
 import gpiozero 
 
@@ -41,6 +42,16 @@ WAVE_FREQ = 1.0       # Hz
 SAMPLE_RATE = 2000     # samples/sec (recommended: 1k–5k)
 AMPLITUDE = 4095        # Full-scale for MCP4821 (12-bit)
 OFFSET = 0
+
+# --------------------------
+# GPIO pins (gpiozero numbering = BCM GPIO numbers, e.g. 12 is GPIO12, which
+# is physical header pin 32. To use physical header pin numbers instead,
+# write them as strings like "BOARD12".)
+# --------------------------
+PEN_PIN = 12              # pen lift solenoid
+RELAY_PIN = 13            # relay that powers the two DACs and the pen mechanism
+PEN_ACTIVE_HIGH = True    # True: pin HIGH = pen down. Set False if the pen works backwards.
+RELAY_ACTIVE_HIGH = True  # True: pin HIGH = relay on. Set False for an active-low relay board.
 
 # --------------------------
 # Initialize SPI objects
@@ -422,6 +433,8 @@ def print_status():
         "---------------- STATUS ----------------",
         f"Pen Status: {'DOWN' if pen_down else 'UP'}",
         f"Energized: {energize}",
+        f"Relay (pin {RELAY_PIN}): {'ON' if ControlEnergize.value else 'OFF'}",
+        f"Pen solenoid (pin {PEN_PIN}): {'DOWN' if PenControl.value else 'UP'}",
         f"Speed (FPS): {FPS}",
         f"Paused: {pause}",
         f"Path progress: {min(path_idx, len(path))}/{len(path)} points, trace = {sum(p is not None for p in trace)} points",
@@ -521,11 +534,19 @@ def handle_command(cmd):
 # ---------------- Main Loop ----------------
 
 print("Main loop start")
-ControlEnergize = gpiozero.OutputDevice(pin=13, initial_value=False)
-ControlEnergize.on()
 
+# Pen starts UP; relay starts OFF until the loop begins.
+PenControl = gpiozero.OutputDevice(pin=PEN_PIN, active_high=PEN_ACTIVE_HIGH, initial_value=False)
+ControlEnergize = gpiozero.OutputDevice(pin=RELAY_PIN, active_high=RELAY_ACTIVE_HIGH, initial_value=False)
 
-print("ControlEnergize.on()")
+def set_pen(down):
+    """Drive the pen lift solenoid on PEN_PIN (True = pen down)."""
+    if PenControl.value != bool(down):
+        PenControl.value = bool(down)
+
+# Make "systemctl stop" / kill (SIGTERM) exit through the finally block below,
+# so the pen is lifted and the relay is turned off.
+signal.signal(signal.SIGTERM, lambda signum, frame: sys.exit(0))
 
 
 running = True
@@ -540,6 +561,10 @@ if ENABLE_CONSOLE_COMMANDS:
 
 next_frame = time.perf_counter()
 try:
+    # Relay ON: power the DACs and pen mechanism for the duration of the loop
+    ControlEnergize.on()
+    print("Relay ON (DACs and pen mechanism powered)")
+
     while running:
         # ---------------- Console commands ----------------
         while not command_queue.empty():
@@ -605,6 +630,9 @@ try:
                 pen_down = False
                 finished = True
 
+        # ---------------- Pen lift solenoid ----------------
+        set_pen(pen_down)
+
         # ---------------- Kinematics ----------------
         ikL = two_link_ik(baseA, L1, L2, pen)
         ikR = two_link_ik(baseB, L3, L4, pen)
@@ -645,6 +673,11 @@ try:
 
 except KeyboardInterrupt:
     print("\nInterrupted (Ctrl+C).")
-# finally:
-#     if ser and ser.is_open:
-#         ser.close()
+finally:
+    # Always runs when the loop ends (finished, quit, Ctrl+C, kill, or an error):
+    # lift the pen, then turn the relay OFF.
+    set_pen(False)
+    ControlEnergize.off()
+    print("Pen up, relay OFF (DACs and pen mechanism unpowered)")
+    spi_dac1.close()
+    spi_dac2.close()
