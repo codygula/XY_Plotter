@@ -28,6 +28,8 @@ import sys
 import threading
 import time
 
+import gpiozero
+
 from Text_to_svg import text_to_svg
 
 # ---------------- USER-CONFIGURABLE CONSTANTS ----------------
@@ -62,6 +64,14 @@ MAX_TEXT_LENGTH = 200             # ignore commands longer than this
 PLOTTER_SCRIPT = os.path.join(SCRIPT_DIR, "Plotter.py")
 PLOTTER_LOG_FILE = os.path.join(SCRIPT_DIR, "plotter_last_run.log")
 
+# Auxiliary outputs (gpiozero / BCM GPIO numbers, same as Plotter.py)
+ALARM_PIN = 22
+ALARM_ON_TIME = 0.5               # seconds on per burst
+ALARM_OFF_TIME = 0.5              # seconds off between bursts
+INK_PUMP_PIN = 5
+INK_PUMP_ON_TIME = 1.0            # seconds the pump runs each time
+BACKLIGHT_PIN = 6
+
 
 # ---------------- Settings ----------------
 data = {}
@@ -83,12 +93,39 @@ def log(msg):
     print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] {msg}", flush=True)
 
 
-# ---------------- Hardware functions (to be filled in) ----------------
-def alarm():
-    pass
+# ---------------- Hardware functions ----------------
+# All outputs start OFF.
+AlarmOutput = gpiozero.OutputDevice(pin=ALARM_PIN, initial_value=False)
+InkPumpOutput = gpiozero.OutputDevice(pin=INK_PUMP_PIN, initial_value=False)
+BackLightOutput = gpiozero.OutputDevice(pin=BACKLIGHT_PIN, initial_value=False)
 
-def backlight(status):
-    pass
+
+def ControlAlarm(bursts):
+    """Sound the alarm (pin ALARM_PIN) `bursts` times: on 0.5 s, off 0.5 s each.
+    Blocks until finished (about 1 second per burst)."""
+    try:
+        for _ in range(int(bursts)):
+            AlarmOutput.on()
+            time.sleep(ALARM_ON_TIME)
+            AlarmOutput.off()
+            time.sleep(ALARM_OFF_TIME)
+    finally:
+        AlarmOutput.off()
+
+
+def ControlInkPump():
+    """Run the ink pump (pin INK_PUMP_PIN) for 1 second, then turn it off."""
+    try:
+        InkPumpOutput.on()
+        time.sleep(INK_PUMP_ON_TIME)
+    finally:
+        InkPumpOutput.off()
+
+
+def ControlBackLight(on):
+    """Turn the backlight (pin BACKLIGHT_PIN) on (True) or off (False)."""
+    BackLightOutput.value = bool(on)
+
 
 def paperFeed():
     pass
@@ -97,9 +134,6 @@ def paperTakeUp():
     if data.get("PaperTakeUpMode") == False:
         print("FALSE!!!")
     # pass
-
-def inkPump():
-    pass
 
 
 # ---------------- Command sources ----------------
@@ -224,9 +258,10 @@ def plot_text(text):
 def startup():
     log("Startup: setting up XY plotter")
     # Add plotter setup here, e.g.:
-    # backlight(data.get("BackLightMode"))
+    # ControlBackLight(data.get("BackLightMode", True))
     # paperTakeUp()
-    # inkPump()
+    # ControlInkPump()
+    # ControlAlarm(3)
 
     if ENABLE_SERIAL_COMMANDS:
         threading.Thread(target=serial_listener, daemon=True).start()
